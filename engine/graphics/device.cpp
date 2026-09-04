@@ -179,13 +179,18 @@ void GraphicsDevice::createSwapchain()
     HRESULT result = E_FAIL;
     if (factory)
     {
+        IDXGISwapChain1* swapChain1 = nullptr;
         result = factory->CreateSwapChainForHwnd(
             device_,
             static_cast<HWND>(nativeHandle_),
             &desc,
             &fullscreen,
             nullptr,
-            &swapChain_);
+            &swapChain1);
+        if (SUCCEEDED(result))
+        {
+            swapChain_ = swapChain1;
+        }
         factory->Release();
     }
 
