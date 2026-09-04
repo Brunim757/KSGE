@@ -154,7 +154,7 @@ void testScreenToRay()
 
     CHECK(abs(ray.origin.x) < 1.0e-3f);
     CHECK(abs(ray.origin.y) < 1.0e-3f);
-    CHECK(abs(ray.origin.z) < 1.0e-3f);
+    checkNear(ray.origin.z, camera.nearPlane, 1.0e-3f, "ray origin near plane");
     checkNear(ray.direction.z, 1.0f, 1.0e-3f, "ray forward z");
     CHECK(abs(ray.direction.x) < 1.0e-3f);
     CHECK(abs(ray.direction.y) < 1.0e-3f);
@@ -168,7 +168,7 @@ void testRayAabb()
 
     float t = 0.0f;
     CHECK(ksge::intersectAabb(
-        hit, ksge::math::Vec3{0.5f, 0.5f, 5.0f}, ksge::math::Vec3{1.5f, 1.5f, 6.0f}, t));
+        hit, ksge::math::Vec3{-0.5f, -0.5f, 5.0f}, ksge::math::Vec3{0.5f, 0.5f, 6.0f}, t));
     checkNear(t, 5.0f, 1.0e-3f, "ray aabb hit t");
 
     float missT = 0.0f;
