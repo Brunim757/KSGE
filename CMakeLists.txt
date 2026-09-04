@@ -20,7 +20,10 @@ set(KSGE_FLECS_TARGET $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::fle
 add_library(ksge_engine STATIC
     engine/core/world.cpp
     engine/graphics/device.cpp
+    engine/platform/input.cpp
     engine/platform/window.cpp
+    engine/scene/camera.cpp
+    engine/scene/camera_service.cpp
 )
 target_include_directories(ksge_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(ksge_engine PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
@@ -36,3 +39,9 @@ target_link_libraries(ksge_engine PUBLIC
 add_executable(ksge_editor editor/main.cpp)
 target_compile_options(ksge_editor PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
 target_link_libraries(ksge_editor PRIVATE ksge_engine)
+
+enable_testing()
+add_executable(ksge_tests tests/run_tests.cpp)
+target_compile_options(ksge_tests PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
+target_link_libraries(ksge_tests PRIVATE ksge_engine)
+add_test(NAME ksge_tests COMMAND ksge_tests)

@@ -1,6 +1,8 @@
 #include "engine/core/world.hpp"
 #include "engine/graphics/device.hpp"
+#include "engine/platform/input.hpp"
 #include "engine/platform/window.hpp"
+#include "engine/scene/camera_service.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -33,6 +35,8 @@ int main(int argc, char** argv)
     ksge::Window window(kDefaultWidth, kDefaultHeight, "KSGE Editor");
     ksge::GraphicsDevice device(window.nativeHandle(), kDefaultWidth, kDefaultHeight);
     ksge::World world;
+    ksge::Input input;
+    ksge::CameraService cameraService(world.handle());
 
     std::int32_t frameCount = 0;
     while (!window.shouldClose())
@@ -45,6 +49,9 @@ int main(int argc, char** argv)
         {
             device.resize(width, height);
         }
+
+        input.capture(window);
+        cameraService.update(input.snapshot());
 
         world.step();
         device.beginFrame(kClearColor);

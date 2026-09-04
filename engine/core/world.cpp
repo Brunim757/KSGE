@@ -1,5 +1,8 @@
 #include "engine/core/world.hpp"
 
+#include "engine/platform/input.hpp"
+#include "engine/scene/components.hpp"
+
 #include <flecs.h>
 
 namespace ksge {
@@ -15,6 +18,14 @@ World::World()
 {
     world_.component<FrameTime>();
     world_.set<FrameTime>({0.0, 0.0});
+
+    world_.component<Transform>();
+    world_.component<Camera>();
+    world_.component<CameraFrame>();
+    world_.set<CameraFrame>({});
+
+    world_.component<InputSnapshot>();
+
     last_ = Clock::now();
     frame_ = {0.0, 0.0};
 }

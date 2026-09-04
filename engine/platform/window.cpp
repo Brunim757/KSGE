@@ -29,6 +29,7 @@ Window::Window(std::int32_t width, std::int32_t height, const char* title)
     , height_(height)
     , pendingWidth_(width)
     , pendingHeight_(height)
+    , pendingScroll_(0.0)
     , resized_(false)
 {
     ensureGlfwInitialized();
@@ -37,6 +38,7 @@ Window::Window(std::int32_t width, std::int32_t height, const char* title)
     handle_ = glfwCreateWindow(width, height, title, nullptr, nullptr);
     glfwSetWindowUserPointer(handle_, this);
     glfwSetFramebufferSizeCallback(handle_, &Window::onFramebufferResize);
+    glfwSetScrollCallback(handle_, &Window::onScroll);
 }
 
 Window::~Window()
@@ -77,6 +79,18 @@ void* Window::nativeHandle() const
     return glfwGetWin32Window(handle_);
 }
 
+GLFWwindow* Window::handle() const
+{
+    return handle_;
+}
+
+double Window::takeScrollDelta()
+{
+    const double delta = pendingScroll_;
+    pendingScroll_ = 0.0;
+    return delta;
+}
+
 void Window::onFramebufferResize(GLFWwindow* window, int width, int height)
 {
     Window* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
@@ -85,6 +99,15 @@ void Window::onFramebufferResize(GLFWwindow* window, int width, int height)
         self->pendingWidth_ = width;
         self->pendingHeight_ = height;
         self->resized_ = true;
+    }
+}
+
+void Window::onScroll(GLFWwindow* window, double offsetX, double offsetY)
+{
+    Window* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (self)
+    {
+        self->pendingScroll_ += offsetY;
     }
 }
 
