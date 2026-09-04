@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <cstring>
 
-namespace ksge {
-
 namespace {
 
 constexpr float kClearColor[4] = {0.08f, 0.09f, 0.11f, 1.0f};
@@ -32,9 +30,9 @@ int main(int argc, char** argv)
 {
     const bool selfTest = hasFlag(argc, argv, "--selftest");
 
-    Window window(kDefaultWidth, kDefaultHeight, "KSGE Editor");
-    GraphicsDevice device(window.nativeHandle(), kDefaultWidth, kDefaultHeight);
-    World world;
+    ksge::Window window(kDefaultWidth, kDefaultHeight, "KSGE Editor");
+    ksge::GraphicsDevice device(window.nativeHandle(), kDefaultWidth, kDefaultHeight);
+    ksge::World world;
 
     std::int32_t frameCount = 0;
     while (!window.shouldClose())
@@ -60,6 +58,4 @@ int main(int argc, char** argv)
     }
 
     return 0;
-}
-
 }

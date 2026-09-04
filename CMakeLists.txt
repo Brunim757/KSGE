@@ -29,6 +29,8 @@ target_link_libraries(ksge_engine PUBLIC
     ${KSGE_FLECS_TARGET}
     Microsoft::DirectXMath
     fastgltf::fastgltf
+    d3d11
+    dxgi
 )
 
 add_executable(ksge_editor editor/main.cpp)
