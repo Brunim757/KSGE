@@ -18,4 +18,4 @@ jobs:
       - name: Build editor (Release)
         run: cmake --build build --config Release --target ksge_editor
       - name: Smoke test
-        run: build\Release\ksge_editor.exe
+        run: build\Release\ksge_editor.exe --selftest

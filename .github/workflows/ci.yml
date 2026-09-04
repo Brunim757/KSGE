@@ -21,4 +21,4 @@ jobs:
       - name: Build
         run: cmake --build build --config ${{ matrix.config }}
       - name: Smoke test
-        run: build\${{ matrix.config }}\ksge_editor.exe
+        run: build\${{ matrix.config }}\ksge_editor.exe --selftest

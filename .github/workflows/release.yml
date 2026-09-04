@@ -17,12 +17,11 @@ jobs:
       - name: Build (Release)
         run: cmake --build build --config Release
       - name: Smoke test
-        run: build\Release\ksge_editor.exe
+        run: build\Release\ksge_editor.exe --selftest
       - name: Package artifacts
         run: |
           New-Item -ItemType Directory -Path dist -Force
           Copy-Item build\Release\ksge_editor.exe dist\
-          Copy-Item build\Release\ksge_exporter.exe dist\ -ErrorAction SilentlyContinue
           Compress-Archive -Path dist\* -DestinationPath KSGE-${{ github.ref_name }}.zip
       - uses: softprops/action-gh-release@v2
         with:
