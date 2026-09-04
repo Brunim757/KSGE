@@ -18,6 +18,9 @@ find_package(fastgltf CONFIG REQUIRED)
 set(KSGE_FLECS_TARGET $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>)
 
 add_library(ksge_engine STATIC
+    engine/assets/gltf.cpp
+    engine/assets/registry.cpp
+    engine/assets/texture.cpp
     engine/core/world.cpp
     engine/graphics/device.cpp
     engine/platform/input.cpp
@@ -34,6 +37,8 @@ target_link_libraries(ksge_engine PUBLIC
     fastgltf::fastgltf
     d3d11
     dxgi
+    windowscodecs
+    ole32
 )
 
 add_executable(ksge_editor editor/main.cpp)
@@ -41,7 +46,10 @@ target_compile_options(ksge_editor PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
 target_link_libraries(ksge_editor PRIVATE ksge_engine)
 
 enable_testing()
-add_executable(ksge_tests tests/run_tests.cpp)
+add_executable(ksge_tests
+    tests/run_tests.cpp
+    tests/asset_tests.cpp
+)
 target_compile_options(ksge_tests PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
 target_link_libraries(ksge_tests PRIVATE ksge_engine)
 add_test(NAME ksge_tests COMMAND ksge_tests)

@@ -1,6 +1,7 @@
 #include "engine/scene/camera.hpp"
 #include "engine/scene/components.hpp"
 #include "engine/scene/math.hpp"
+#include "tests/asset_tests.hpp"
 
 #include <DirectXMath.h>
 #include <cmath>
@@ -208,6 +209,8 @@ int main()
     testYawProjection();
     testScreenToRay();
     testRayAabb();
+
+    failures += runAssetTests();
 
     if (failures == 0)
     {
