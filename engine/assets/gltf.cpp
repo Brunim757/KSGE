@@ -65,9 +65,9 @@ const std::uint8_t* bufferData(const fastgltf::Asset& asset, std::size_t bufferI
     {
         return reinterpret_cast<const std::uint8_t*>(array->bytes.data());
     }
-    if (const auto* vector = std::get_if<std::vector<std::byte>>(&buffer.data))
+    if (const auto* vector = std::get_if<fastgltf::sources::Vector>(&buffer.data))
     {
-        return reinterpret_cast<const std::uint8_t*>(vector->data());
+        return reinterpret_cast<const std::uint8_t*>(vector->bytes.data());
     }
     return nullptr;
 }
@@ -76,7 +76,6 @@ struct AccessorRegion
 {
     const std::uint8_t* base = nullptr;
     std::size_t stride = 0u;
-    std::size_t elementSize = 0u;
 };
 
 bool accessorRegion(
@@ -84,12 +83,12 @@ bool accessorRegion(
     const fastgltf::Accessor& accessor,
     AccessorRegion& out)
 {
-    if (!accessor.bufferView)
+    if (!accessor.bufferViewIndex.has_value())
     {
         return false;
     }
-    const fastgltf::BufferView& view = asset.bufferViews[*accessor.bufferView];
-    const std::uint8_t* bytes = bufferData(asset, view.buffer);
+    const fastgltf::BufferView& view = asset.bufferViews[*accessor.bufferViewIndex];
+    const std::uint8_t* bytes = bufferData(asset, view.bufferIndex);
     if (!bytes)
     {
         return false;
@@ -97,7 +96,6 @@ bool accessorRegion(
 
     const std::size_t elementSize = componentSize(accessor.componentType) * typeElements(accessor.type);
     out.stride = view.byteStride.value_or(elementSize);
-    out.elementSize = elementSize;
     out.base = bytes + view.byteOffset + accessor.byteOffset;
     return true;
 }
@@ -201,7 +199,7 @@ std::uint32_t readIndex(const std::uint8_t* bytes, fastgltf::ComponentType type)
 bool loadGltfFile(const std::filesystem::path& path, LoadedAsset& out, std::string& error)
 {
     auto dataBuffer = fastgltf::GltfDataBuffer::FromPath(path);
-    if (dataBuffer.error())
+    if (dataBuffer.error() != fastgltf::Error::None)
     {
         error = "failed to read gltf file";
         return false;
@@ -210,8 +208,8 @@ bool loadGltfFile(const std::filesystem::path& path, LoadedAsset& out, std::stri
     fastgltf::Parser parser;
     const auto options =
         fastgltf::Options::LoadExternalBuffers | fastgltf::Options::LoadExternalImages;
-    auto expected = parser.loadGltf(&dataBuffer.get(), fastgltf::Path{path.parent_path().string()}, options);
-    if (expected.error())
+    auto expected = parser.loadGltf(&dataBuffer.get(), path.parent_path(), options);
+    if (expected.error() != fastgltf::Error::None)
     {
         error = "failed to parse gltf";
         return false;
@@ -241,23 +239,23 @@ bool loadGltfFile(const std::filesystem::path& path, LoadedAsset& out, std::stri
         materialData.doubleSided = material.doubleSided;
         materialData.baseColorTexture = material.pbrData.baseColorTexture.has_value()
             ? static_cast<std::int32_t>(
-                  asset.textures[material.pbrData.baseColorTexture->textureIndex].image.value_or(0u))
+                  asset.textures[material.pbrData.baseColorTexture->textureIndex].imageIndex.value_or(0u))
             : -1;
         materialData.metallicRoughnessTexture = material.pbrData.metallicRoughnessTexture.has_value()
             ? static_cast<std::int32_t>(
-                  asset.textures[material.pbrData.metallicRoughnessTexture->textureIndex].image.value_or(0u))
+                  asset.textures[material.pbrData.metallicRoughnessTexture->textureIndex].imageIndex.value_or(0u))
             : -1;
         materialData.normalTexture = material.normalTexture.has_value()
             ? static_cast<std::int32_t>(
-                  asset.textures[material.normalTexture->textureIndex].image.value_or(0u))
+                  asset.textures[material.normalTexture->textureIndex].imageIndex.value_or(0u))
             : -1;
         materialData.occlusionTexture = material.occlusionTexture.has_value()
             ? static_cast<std::int32_t>(
-                  asset.textures[material.occlusionTexture->textureIndex].image.value_or(0u))
+                  asset.textures[material.occlusionTexture->textureIndex].imageIndex.value_or(0u))
             : -1;
         materialData.emissiveTexture = material.emissiveTexture.has_value()
             ? static_cast<std::int32_t>(
-                  asset.textures[material.emissiveTexture->textureIndex].image.value_or(0u))
+                  asset.textures[material.emissiveTexture->textureIndex].imageIndex.value_or(0u))
             : -1;
         out.materials.push_back(materialData);
     }
@@ -269,12 +267,12 @@ bool loadGltfFile(const std::filesystem::path& path, LoadedAsset& out, std::stri
             MeshData meshData;
 
             std::vector<float> positions;
-            const auto positionIt = primitive.attributes.find("POSITION");
+            const auto positionIt = primitive.findAttribute("POSITION");
             if (positionIt == primitive.attributes.end())
             {
                 continue;
             }
-            const fastgltf::Accessor& positionAccessor = asset.accessors[positionIt->second];
+            const fastgltf::Accessor& positionAccessor = asset.accessors[positionIt->accessorIndex];
             if (!copyAccessorFloats(asset, positionAccessor, 3u, positions))
             {
                 continue;
@@ -282,24 +280,24 @@ bool loadGltfFile(const std::filesystem::path& path, LoadedAsset& out, std::stri
             meshData.vertexCount = static_cast<std::uint32_t>(positionAccessor.count);
 
             std::vector<float> normals;
-            const auto normalIt = primitive.attributes.find("NORMAL");
+            const auto normalIt = primitive.findAttribute("NORMAL");
             const bool hasNormals = normalIt != primitive.attributes.end() &&
-                copyAccessorFloats(asset, asset.accessors[normalIt->second], 3u, normals);
+                copyAccessorFloats(asset, asset.accessors[normalIt->accessorIndex], 3u, normals);
 
             std::vector<float> uvs;
-            const auto uvIt = primitive.attributes.find("TEXCOORD_0");
+            const auto uvIt = primitive.findAttribute("TEXCOORD_0");
             const bool hasUvs = uvIt != primitive.attributes.end() &&
-                copyAccessorFloats(asset, asset.accessors[uvIt->second], 2u, uvs);
+                copyAccessorFloats(asset, asset.accessors[uvIt->accessorIndex], 2u, uvs);
 
             std::vector<float> tangents;
-            const auto tangentIt = primitive.attributes.find("TANGENT");
+            const auto tangentIt = primitive.findAttribute("TANGENT");
             const bool hasTangents = tangentIt != primitive.attributes.end() &&
-                copyAccessorFloats(asset, asset.accessors[tangentIt->second], 4u, tangents);
+                copyAccessorFloats(asset, asset.accessors[tangentIt->accessorIndex], 4u, tangents);
 
             std::vector<float> colors;
-            const auto colorIt = primitive.attributes.find("COLOR_0");
+            const auto colorIt = primitive.findAttribute("COLOR_0");
             const bool hasColors = colorIt != primitive.attributes.end() &&
-                copyAccessorFloats(asset, asset.accessors[colorIt->second], 4u, colors);
+                copyAccessorFloats(asset, asset.accessors[colorIt->accessorIndex], 4u, colors);
 
             std::uint32_t mask = VertexPosition;
             math::Vec3 boundsMin{kMaximum, kMaximum, kMaximum};
@@ -377,9 +375,9 @@ bool loadGltfFile(const std::filesystem::path& path, LoadedAsset& out, std::stri
                 writeComponent(colors, 4u);
             }
 
-            if (primitive.indices.has_value())
+            if (primitive.indicesAccessor.has_value())
             {
-                const fastgltf::Accessor& indexAccessor = asset.accessors[*primitive.indices];
+                const fastgltf::Accessor& indexAccessor = asset.accessors[*primitive.indicesAccessor];
                 AccessorRegion region;
                 if (accessorRegion(asset, indexAccessor, region))
                 {
