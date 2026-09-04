@@ -1,0 +1,11 @@
+{
+  "name": "ksge",
+  "version-string": "0.1.0",
+  "description": "Kizuri Studio Game Engine",
+  "dependencies": [
+    "glfw3",
+    "flecs",
+    "fastgltf",
+    "directxmath"
+  ]
+}

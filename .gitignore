@@ -1,0 +1,34 @@
+# Build
+build/
+out/
+bin/
+obj/
+CMakeFiles/
+CMakeCache.txt
+*.user
+*.suo
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# .NET
+bin/Debug/
+bin/Release/
+obj/
+*.nupkg
+
+# Assets gerados
+data/maps/**/*.map
+data/assets/cache/
+
+# Logs e temporários
+*.log
+*.tmp
+__pycache__/
+
+# Sistema
+Thumbs.db
+.DS_Store
