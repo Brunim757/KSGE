@@ -19,6 +19,9 @@ target_compile_options(ksge_exporter PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(flecs CONFIG REQUIRED)
 find_package(directxmath CONFIG REQUIRED)
+find_package(fastgltf CONFIG REQUIRED)
 
-target_link_libraries(ksge_editor PRIVATE glfw flecs DirectXMath)
-target_link_libraries(ksge_exporter PRIVATE DirectXMath)
+set(KSCE_FLECS_TARGET $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>)
+
+target_link_libraries(ksge_editor PRIVATE glfw ${KSCE_FLECS_TARGET} Microsoft::DirectXMath fastgltf::fastgltf)
+target_link_libraries(ksge_exporter PRIVATE Microsoft::DirectXMath)
