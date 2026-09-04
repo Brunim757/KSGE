@@ -6,14 +6,9 @@
 
 namespace ksge {
 
-Input::Input()
-    : snapshot_()
+void Input::capture(Window& window)
 {
-}
-
-void Input::capture(const Window& window)
-{
-    const GLFWwindow* handle = window.handle();
+    GLFWwindow* handle = window.handle();
 
     snapshot_.pressed = 0u;
 

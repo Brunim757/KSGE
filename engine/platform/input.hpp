@@ -52,7 +52,7 @@ public:
     Input(const Input&) = delete;
     Input& operator=(const Input&) = delete;
 
-    void capture(const Window& window);
+    void capture(Window& window);
 
     const InputSnapshot& snapshot() const;
 

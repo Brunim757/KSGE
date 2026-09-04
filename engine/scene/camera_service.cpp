@@ -46,28 +46,24 @@ flecs::entity CameraService::editorCamera() const
 
 void CameraService::update(const InputSnapshot& input)
 {
-    const FrameTime* frameTime = world_.get<FrameTime>();
-    const float deltaSeconds = frameTime ? static_cast<float>(frameTime->deltaSeconds) : 0.0f;
+    const FrameTime& frameTime = world_.get<FrameTime>();
+    const float deltaSeconds = static_cast<float>(frameTime.deltaSeconds);
 
-    Transform* transform = camera_.get_mut<Transform>();
-    Camera* camera = camera_.get_mut<Camera>();
-    if (!transform || !camera)
-    {
-        return;
-    }
+    Transform& transform = camera_.get_mut<Transform>();
+    Camera& camera = camera_.get_mut<Camera>();
 
     const bool lookEnabled = (input.mouseButtons & 2u) != 0u;
     if (lookEnabled)
     {
-        camera->yaw += input.mouseDX * kLookSpeed;
-        camera->pitch += input.mouseDY * kLookSpeed;
-        camera->pitch = std::clamp(camera->pitch, -kPitchLimit, kPitchLimit);
+        camera.yaw += input.mouseDX * kLookSpeed;
+        camera.pitch += input.mouseDY * kLookSpeed;
+        camera.pitch = std::clamp(camera.pitch, -kPitchLimit, kPitchLimit);
     }
 
     math::Vec3 right;
     math::Vec3 up;
     math::Vec3 forward;
-    buildBasis(camera->yaw, camera->pitch, right, up, forward);
+    buildBasis(camera.yaw, camera.pitch, right, up, forward);
 
     math::Vec3 horizontal{forward.x, 0.0f, forward.z};
     const float horizontalLength =
@@ -82,31 +78,31 @@ void CameraService::update(const InputSnapshot& input)
     const float step = kMoveSpeed * deltaSeconds;
     if (isPressed(input, KeyW))
     {
-        transform->position.x += horizontal.x * step;
-        transform->position.z += horizontal.z * step;
+        transform.position.x += horizontal.x * step;
+        transform.position.z += horizontal.z * step;
     }
     if (isPressed(input, KeyS))
     {
-        transform->position.x -= horizontal.x * step;
-        transform->position.z -= horizontal.z * step;
+        transform.position.x -= horizontal.x * step;
+        transform.position.z -= horizontal.z * step;
     }
     if (isPressed(input, KeyD))
     {
-        transform->position.x += right.x * step;
-        transform->position.z += right.z * step;
+        transform.position.x += right.x * step;
+        transform.position.z += right.z * step;
     }
     if (isPressed(input, KeyA))
     {
-        transform->position.x -= right.x * step;
-        transform->position.z -= right.z * step;
+        transform.position.x -= right.x * step;
+        transform.position.z -= right.z * step;
     }
     if (isPressed(input, KeySpace))
     {
-        transform->position.y += step;
+        transform.position.y += step;
     }
     if (isPressed(input, KeyLeftControl))
     {
-        transform->position.y -= step;
+        transform.position.y -= step;
     }
 
     const DirectX::XMMATRIX basis = DirectX::XMMatrixSet(
@@ -115,10 +111,10 @@ void CameraService::update(const InputSnapshot& input)
         forward.x, forward.y, forward.z, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f);
     DirectX::XMStoreFloat4(
-        &transform->rotation, DirectX::XMQuaternionRotationMatrix(basis));
+        &transform.rotation, DirectX::XMQuaternionRotationMatrix(basis));
 
     CameraFrame frame;
-    ksge::cameraFrame(*transform, *camera, frame);
+    ksge::cameraFrame(transform, camera, frame);
     world_.set<CameraFrame>(frame);
 }
 
