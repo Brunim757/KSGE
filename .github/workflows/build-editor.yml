@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2
       - name: Install dependencies
-        run: & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install --triplet x64-windows
+        run: "& \"$env:VCPKG_INSTALLATION_ROOT\\vcpkg.exe\" install --triplet x64-windows"
       - name: Configure
         run: cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_MANIFEST_MODE=ON
       - name: Build editor (Release)
