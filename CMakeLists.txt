@@ -11,10 +11,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(ksge_editor editor/main.cpp)
-target_compile_options(ksge_editor PRIVATE /W4 /EHsc /O2)
+target_compile_options(ksge_editor PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
 
 add_executable(ksge_exporter exporter/main.cpp)
-target_compile_options(ksge_exporter PRIVATE /W4 /EHsc /O2)
+target_compile_options(ksge_exporter PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(flecs CONFIG REQUIRED)
