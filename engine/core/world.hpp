@@ -3,10 +3,7 @@
 #include <chrono>
 #include <cstdint>
 
-namespace flecs
-{
-class world;
-}
+#include <flecs.h>
 
 namespace ksge {
 
