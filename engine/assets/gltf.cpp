@@ -208,7 +208,7 @@ bool loadGltfFile(const std::filesystem::path& path, LoadedAsset& out, std::stri
     fastgltf::Parser parser;
     const auto options =
         fastgltf::Options::LoadExternalBuffers | fastgltf::Options::LoadExternalImages;
-    auto expected = parser.loadGltf(&dataBuffer.get(), path.parent_path(), options);
+    auto expected = parser.loadGltf(dataBuffer.get(), path.parent_path(), options);
     if (expected.error() != fastgltf::Error::None)
     {
         error = "failed to parse gltf";
