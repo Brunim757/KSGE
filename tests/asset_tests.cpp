@@ -182,7 +182,7 @@ void testPngRoundTrip()
     CHECK(SUCCEEDED(encoder->CreateNewFrame(&frame, &bag)));
     CHECK(SUCCEEDED(frame->Initialize(bag)));
 
-    const std::uint8_t sourcePixel[4] = {0u, 0u, 255u, 255u};
+    std::uint8_t sourcePixel[4] = {0u, 0u, 255u, 255u};
     IWICBitmap* bitmap = nullptr;
     CHECK(SUCCEEDED(factory->CreateBitmapFromMemory(
         1u,
