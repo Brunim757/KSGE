@@ -80,7 +80,7 @@ void testProjectCenter()
     const ksge::math::Vec3 beyondFar = {0.0f, 0.0f, 1500.0f};
     CHECK(!ksge::intersects(frustum, beyondFar, half));
 
-    const DirectX::XMVECTOR point = DirectX::XMLoadFloat3(&ksge::math::Vec3{0.0f, 0.0f, 10.0f});
+    const DirectX::XMVECTOR point = DirectX::XMVectorSet(0.0f, 0.0f, 10.0f, 0.0f);
     const DirectX::XMVECTOR projected = DirectX::XMVector3Project(
         point,
         0.0f,
@@ -120,7 +120,7 @@ void testYawProjection()
     ksge::CameraFrame frame;
     ksge::cameraFrame(transform, camera, frame);
 
-    const DirectX::XMVECTOR point = DirectX::XMLoadFloat3(&ksge::math::Vec3{10.0f, 0.0f, 0.0f});
+    const DirectX::XMVECTOR point = DirectX::XMVectorSet(10.0f, 0.0f, 0.0f, 0.0f);
     const DirectX::XMVECTOR projected = DirectX::XMVector3Project(
         point,
         0.0f,
