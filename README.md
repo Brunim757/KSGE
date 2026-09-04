@@ -24,10 +24,7 @@ Todo build/teste é executado remotamente via **GitHub Actions** (ver `.github/w
 
 | Workflow | Função |
 |---|---|
-| `ci.yml` | Build Debug/Release + testes em runner Windows |
-| `build-editor.yml` | Build completo do editor |
-| `build-export.yml` | Build do exporter + validação do .exe |
-| `release.yml` | Geração de Release em tags semver |
+| `ci.yml` | Build Debug/Release + smoke test real do executável; em tags `v*`, gera a Release com o artefato .exe |
 
 ## Status
 
