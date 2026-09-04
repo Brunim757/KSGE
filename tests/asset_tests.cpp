@@ -247,7 +247,7 @@ void testDdsBc1()
     writer.close();
 
     ksge::AssetRegistry registry;
-    const std::uint32_t textureIndex = registry.loadTexture(path);
+    const std::uint32_t textureIndex = registry.loadTexture(path, 1u);
     CHECK(textureIndex != ksge::AssetRegistry::kInvalidIndex);
 
     const ksge::TextureData& texture = registry.texture(textureIndex);
@@ -299,16 +299,16 @@ void testDdsUncompressed()
     writer.close();
 
     ksge::AssetRegistry registry;
-    const std::uint32_t textureIndex = registry.loadTexture(path);
+    const std::uint32_t textureIndex = registry.loadTexture(path, 1u);
     CHECK(textureIndex != ksge::AssetRegistry::kInvalidIndex);
 
     const ksge::TextureData& texture = registry.texture(textureIndex);
     CHECK(texture.width == 2u);
     CHECK(texture.height == 2u);
     CHECK(texture.pixels.size() == 16u);
-    CHECK(texture.pixels[0] == 255u && texture.pixels[1] == 0u && texture.pixels[2] == 0u);
+    CHECK(texture.pixels[0] == 0u && texture.pixels[1] == 0u && texture.pixels[2] == 255u);
     CHECK(texture.pixels[4] == 0u && texture.pixels[5] == 255u && texture.pixels[6] == 0u);
-    CHECK(texture.pixels[8] == 0u && texture.pixels[9] == 0u && texture.pixels[10] == 255u);
+    CHECK(texture.pixels[8] == 255u && texture.pixels[9] == 0u && texture.pixels[10] == 0u);
 
     ksge::TextureData mips = registry.texture(textureIndex);
     ksge::generateMipChain(mips, 0u);
