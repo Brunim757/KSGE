@@ -8,6 +8,7 @@
 #include "engine/scene/components.hpp"
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -144,6 +145,14 @@ int main(int argc, char** argv)
         world.step();
         device.beginFrame(kClearColor);
         renderer.render();
+        if (selfTest && (frameCount % 30) == 0)
+        {
+            float luminance = 0.0f;
+            if (device.readAverageLuminance(luminance))
+            {
+                std::printf("KSGE selftest frame %d luminance %.4f\n", frameCount, luminance);
+            }
+        }
         device.present();
 
         ++frameCount;

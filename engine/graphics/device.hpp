@@ -23,6 +23,7 @@ public:
     void beginFrame(const float clearColor[4]);
     bool present();
     void resize(std::int32_t width, std::int32_t height);
+    bool readAverageLuminance(float& luminance);
 
     ID3D11Device* device() const;
     ID3D11DeviceContext* context() const;
@@ -45,6 +46,9 @@ private:
     ID3D11RenderTargetView* renderTargetView_;
     ID3D11Texture2D* depthStencil_;
     ID3D11DepthStencilView* depthStencilView_;
+    ID3D11Texture2D* stagingTexture_;
+    std::int32_t stagingWidth_ = 0;
+    std::int32_t stagingHeight_ = 0;
     std::int32_t width_;
     std::int32_t height_;
 };

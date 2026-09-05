@@ -36,6 +36,7 @@ GraphicsDevice::GraphicsDevice(void* nativeHandle, std::int32_t width, std::int3
     , renderTargetView_(nullptr)
     , depthStencil_(nullptr)
     , depthStencilView_(nullptr)
+    , stagingTexture_(nullptr)
     , width_(width)
     , height_(height)
 {
@@ -46,6 +47,11 @@ GraphicsDevice::GraphicsDevice(void* nativeHandle, std::int32_t width, std::int3
 
 GraphicsDevice::~GraphicsDevice()
 {
+    if (stagingTexture_)
+    {
+        stagingTexture_->Release();
+        stagingTexture_ = nullptr;
+    }
     releaseRenderTargets();
     if (swapChain_)
     {
@@ -108,6 +114,76 @@ bool GraphicsDevice::present()
         recreate();
         return false;
     }
+    return true;
+}
+
+bool GraphicsDevice::readAverageLuminance(float& luminance)
+{
+    if (device_ == nullptr || context_ == nullptr || swapChain_ == nullptr || width_ <= 0 || height_ <= 0)
+    {
+        return false;
+    }
+    if (stagingTexture_ == nullptr || stagingWidth_ != width_ || stagingHeight_ != height_)
+    {
+        if (stagingTexture_)
+        {
+            stagingTexture_->Release();
+            stagingTexture_ = nullptr;
+        }
+        D3D11_TEXTURE2D_DESC stagingDesc = {};
+        stagingDesc.Width = static_cast<UINT>(width_);
+        stagingDesc.Height = static_cast<UINT>(height_);
+        stagingDesc.MipLevels = 1u;
+        stagingDesc.ArraySize = 1u;
+        stagingDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        stagingDesc.SampleDesc.Count = 1u;
+        stagingDesc.Usage = D3D11_USAGE_STAGING;
+        stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        if (FAILED(device_->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture_)))
+        {
+            return false;
+        }
+        stagingWidth_ = width_;
+        stagingHeight_ = height_;
+    }
+
+    ID3D11Texture2D* backBuffer = nullptr;
+    if (FAILED(swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer))))
+    {
+        return false;
+    }
+    context_->CopyResource(stagingTexture_, backBuffer);
+    backBuffer->Release();
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    if (FAILED(context_->Map(stagingTexture_, 0u, D3D11_MAP_READ, 0u, &mapped)))
+    {
+        return false;
+    }
+
+    const auto* pixels = static_cast<const std::uint8_t*>(mapped.pData);
+    constexpr int kStride = 4;
+    double accumulated = 0.0;
+    std::size_t samples = 0u;
+    for (int y = 0; y < height_; y += kStride)
+    {
+        const std::uint8_t* row = pixels + static_cast<std::size_t>(y) * mapped.RowPitch;
+        for (int x = 0; x < width_; x += kStride)
+        {
+            const std::uint8_t* pixel = row + static_cast<std::size_t>(x) * 4u;
+            const float r = static_cast<float>(pixel[0]) * (1.0f / 255.0f);
+            const float g = static_cast<float>(pixel[1]) * (1.0f / 255.0f);
+            const float b = static_cast<float>(pixel[2]) * (1.0f / 255.0f);
+            accumulated += r * 0.2126 + g * 0.7152 + b * 0.0722;
+            ++samples;
+        }
+    }
+    context_->Unmap(stagingTexture_, 0u);
+    if (samples == 0u)
+    {
+        return false;
+    }
+    luminance = static_cast<float>(accumulated / static_cast<double>(samples));
     return true;
 }
 
@@ -323,6 +399,11 @@ void GraphicsDevice::releaseRenderTargets()
 
 void GraphicsDevice::recreate()
 {
+    if (stagingTexture_)
+    {
+        stagingTexture_->Release();
+        stagingTexture_ = nullptr;
+    }
     releaseRenderTargets();
     if (swapChain_)
     {

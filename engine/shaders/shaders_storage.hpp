@@ -255,7 +255,7 @@ VSOut main(uint vertexId : SV_VertexID)
     float2 grid = float2((vertexId << 1u) & 2u, vertexId & 2u);
     VSOut output;
     output.position = float4(grid * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
-    output.uv = grid * 0.5;
+    output.uv = grid;
     return output;
 }
 )";
