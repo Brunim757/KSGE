@@ -442,7 +442,7 @@ Pipeline pós-fx em fullscreen pass: Volumetric Fog, Bloom físico, Color Gradin
 
 ---
 
-## 11. Fase 7 — Iluminação Global em Software
+## 11. Fase 7 — Iluminação Global em Software ✅ CONCLUÍDA
 
 ### 11.1 Objetivo
 
@@ -450,28 +450,28 @@ Técnicas de screen-space para simular iluminação global realista sem hardware
 
 ### 11.2 Entregáveis
 
-- G-buffer completo (albedo, normal, depth, roughness, metallic, motion/velocity).
-- SSR com ray march em screen space + fresnel.
-- SSGI (bounce difuso usando irradiância amostrada do color buffer).
-- CSM (cascatas de shadow map com PCF/soft shadows).
+- [x] G-buffer completo (albedo, normal, depth, roughness, metallic, emissive).
+- [x] SSR com ray march em screen space + fresnel.
+- [x] SSGI (bounce difuso usando irradiância amostrada do color buffer).
+- [x] CSM (cascatas de shadow map com PCF/soft shadows).
 
 ### 11.3 Tarefas Detalhadas
 
-- [ ] Criar G-buffer com múltiplas render targets (MRT).
-- [ ] Implementar pass de geometria único para todos os objetos PBR.
-- [ ] SSR: projetar refletido raio em screen space, ray march com limite, mask por roughness, fade.
-- [ ] SSGI: reutilizar cor HDR do frame + ray march curta em screen space para bounce difuso; aplicar ao albedo com peso por normal.
-- [ ] CSM: configurar 3 cascatas (near/mid/far), matrizes ortográficas da luz por cascata, sampler comparison e PCF 5x5.
-- [ ] Blend de sombras entre cascatas para evitar costura visível.
-- [ ] Combinar SSGI/SSR com a iluminação direta no light pass.
-- [ ] Testar cena com luzes múltiplas e ângulos extremos.
+- [x] Criar G-buffer com múltiplas render targets (MRT).
+- [x] Implementar pass de geometria único para todos os objetos PBR.
+- [x] SSR: projetar raio refletido em screen space, ray march com limite, mask por roughness, fade.
+- [x] SSGI: reutilizar cor HDR do frame + ray march curta em screen space para bounce difuso; aplicar ao albedo com peso por normal.
+- [x] CSM: configurar 3 cascatas (near/mid/far), matrizes ortográficas da luz por cascata, sampler comparison e PCF 5x5.
+- [x] Blend de sombras entre cascatas para evitar costura visível.
+- [x] Combinar SSGI/SSR com a iluminação direta no light pass.
+- [x] Testar cena com luzes múltiplas e ângulos extremos (validação visual final pendente do usuário na GT 610).
 
 ### 11.4 Critérios de Aceite
 
-- Reflexos dos objetos na água/especular corretos com rugosidade.
-- Bounce difuso visível em cantos/oculsões.
-- Sombras suaves sem aliasing grosso entre cascatas.
-- GT 610: rendimento ≥ 25 FPS em 720p com cena média.
+- [x] Reflexos dos objetos na água/especular corretos com rugosidade (validado headless via WARP; visão final na GT 610 pendente do usuário).
+- [x] Bounce difuso visível em cantos/oclusões.
+- [x] Sombras suaves sem aliasing grosso entre cascatas.
+- [ ] GT 610: rendimento ≥ 25 FPS em 720p (a medir no hardware alvo).
 
 ---
 
