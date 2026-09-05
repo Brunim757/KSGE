@@ -106,7 +106,6 @@ private:
     Target bloomTemp_;
 
     ID3D11VertexShader* fullscreenVertex_ = nullptr;
-    ID3D11PixelShader* passthroughShader_ = nullptr;
     ID3D11PixelShader* ssaoShader_ = nullptr;
     ID3D11PixelShader* ssaoBlurHShader_ = nullptr;
     ID3D11PixelShader* ssaoBlurVShader_ = nullptr;

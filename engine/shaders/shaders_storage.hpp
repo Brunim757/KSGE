@@ -466,10 +466,7 @@ float4 main(VSOut input) : SV_Target
         float fogAmount = 1.0 - exp(-density * stepSize);
 
         float phase = henyeyGreenstein(dot(viewDir, sunDir));
-        float upMix = saturate(viewDir.y * 0.5 + 0.5);
-        float3 ambient = lerp(float3(0.55, 0.63, 0.70), float3(0.22, 0.42, 0.72), upMix);
-        scattering += gSunColor.xyz * (gSun.w * phase + 0.15) * fogAmount * transmittance;
-        scattering += ambient * fogAmount * transmittance * 0.5;
+        scattering += gSunColor.xyz * gSun.w * phase * fogAmount * transmittance;
         transmittance *= 1.0 - fogAmount;
     }
 
@@ -642,16 +639,6 @@ inline std::string postProcessPixelShader(const char* body)
     source.append(body);
     return source;
 }
-
-inline constexpr const char* kPostPassthrough = R"(
-Texture2D gScene : register(t0);
-SamplerState gLinearSampler : register(s1);
-
-float4 main(VSOut input) : SV_Target
-{
-    return float4(gScene.Sample(gLinearSampler, input.uv).rgb, 1.0);
-}
-)";
 
 }
 }

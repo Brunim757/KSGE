@@ -159,27 +159,13 @@ void PostProcess::endScene()
 
 void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuffer)
 {
-    if (d3d_ == nullptr || context_ == nullptr || backbuffer == nullptr)
+    if (d3d_ == nullptr || context_ == nullptr)
     {
         return;
     }
     ensureTargets(info.width, info.height);
-    if (sceneColor_.srv == nullptr)
+    if (compositeShader_ == nullptr)
     {
-        return;
-    }
-    if (compositeShader_ == nullptr || lutView_ == nullptr ||
-        ssaoRaw_.srv == nullptr || fog_.srv == nullptr ||
-        bloomBase_.srv == nullptr || depth_.srv == nullptr)
-    {
-        if (passthroughShader_ != nullptr && sceneColor_.srv != nullptr)
-        {
-            beginPass(backbuffer, static_cast<float>(width_), static_cast<float>(height_), false, passthroughShader_);
-            ID3D11ShaderResourceView* sceneResource[1] = {sceneColor_.srv};
-            context_->PSSetShaderResources(0u, 1u, sceneResource);
-            drawFullscreen();
-            clearResources();
-        }
         return;
     }
 
@@ -195,28 +181,6 @@ void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuf
     postDebugMode_ = info.debugMode;
 
     updateGradedLut();
-
-    if (ssaoShader_ == nullptr)
-    {
-        const float neutral[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-        context_->ClearRenderTargetView(ssaoRaw_.rtv, neutral);
-        context_->ClearRenderTargetView(ssaoBlur_.rtv, neutral);
-    }
-    if (fogShader_ == nullptr && fog_.rtv != nullptr)
-    {
-        const float neutral[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-        context_->ClearRenderTargetView(fog_.rtv, neutral);
-    }
-    if (bloomExtractShader_ == nullptr && bloomBase_.rtv != nullptr)
-    {
-        const float neutral[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-        context_->ClearRenderTargetView(bloomBase_.rtv, neutral);
-        context_->ClearRenderTargetView(bloomMip1_.rtv, neutral);
-        context_->ClearRenderTargetView(bloomMip2_.rtv, neutral);
-        context_->ClearRenderTargetView(bloomAccum_.rtv, neutral);
-        context_->ClearRenderTargetView(bloomTemp_.rtv, neutral);
-    }
-
     applySsao();
     applySsaoBlur();
     applyFog();
@@ -350,7 +314,7 @@ void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
 {
     if (compositeShader_ == nullptr || backbuffer == nullptr ||
         sceneColor_.srv == nullptr || ssaoRaw_.srv == nullptr || fog_.srv == nullptr ||
-        bloomBase_.srv == nullptr || depth_.srv == nullptr)
+        bloomBase_.srv == nullptr || lutView_ == nullptr || depth_.srv == nullptr)
     {
         return;
     }
@@ -366,7 +330,6 @@ void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
         bloomAccum_.srv,
         lutView_,
         depth_.srv,
-        nullptr,
     };
     context_->PSSetShaderResources(0u, 7u, resources);
     drawFullscreen();
@@ -448,10 +411,10 @@ void PostProcess::uploadConstants(std::uint32_t texelWidth, std::uint32_t texelH
     constants.cameraNearFar = {postNear_, postFar_, 0.0f, 0.0f};
     constants.sun = {postSunDir_.x, postSunDir_.y, postSunDir_.z, postSunIntensity_};
     constants.sunColor = {postSunColor_.x, postSunColor_.y, postSunColor_.z, 0.0f};
-    constants.fogParams = {0.0002f, 0.02f, 0.0f, 0.0f};
+    constants.fogParams = {0.002f, 0.05f, 0.0f, 0.0f};
     constants.ssaoParams = {1.5f, 0.8f, static_cast<float>(kSsaoSamples), 0.0f};
     constants.bloomParams = {1.0f, 0.35f, 0.0f, 0.0f};
-    constants.compositeParams = {0.8f, 0.8f, 0.5f, postExposure_};
+    constants.compositeParams = {1.0f, 0.8f, 1.0f, postExposure_};
 
     context_->UpdateSubresource(constants_, 0u, nullptr, &constants, 0u, 0u);
     context_->VSSetConstantBuffers(0u, 1u, &constants_);
@@ -736,7 +699,6 @@ void PostProcess::compileShaders()
         bytecode->Release();
         bytecode = nullptr;
     }
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kPostPassthrough), passthroughShader_, error);
     createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kSsaoBody), ssaoShader_, error);
     createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kSsaoBlurHBody), ssaoBlurHShader_, error);
     createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kSsaoBlurVBody), ssaoBlurVShader_, error);
@@ -800,11 +762,6 @@ void PostProcess::releaseShaders()
     {
         ssaoShader_->Release();
         ssaoShader_ = nullptr;
-    }
-    if (passthroughShader_)
-    {
-        passthroughShader_->Release();
-        passthroughShader_ = nullptr;
     }
     if (fullscreenVertex_)
     {
