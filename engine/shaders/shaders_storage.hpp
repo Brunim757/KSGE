@@ -127,26 +127,112 @@ GBufferOut main(VSOut input)
 }
 )";
 
-inline constexpr const char* kShadowVertex = R"(
+inline constexpr const char* kGBufferInstancedVertex = R"(
+struct VSIn
+{
+    float3 position : POSITION;
+    float3 normal : NORMAL;
+    float2 uv : TEXCOORD;
+    float4 tangent : TANGENT;
+};
+
+struct VSOut
+{
+    float4 position : SV_Position;
+    float3 world : WORLD;
+    float3 normal : NORMAL;
+    float2 uv : TEXCOORD;
+    float4 tangent : TANGENT;
+};
+
+StructuredBuffer<row_major float4x4> gInstances : register(t0);
+
+cbuffer SceneCB : register(b0)
+{
+    row_major float4x4 gViewProj;
+    float4 gCamPos;
+    float4 gSunDir;
+    float4 gSunColor;
+    float4 gSkyTop;
+    float4 gSkyHorizon;
+};
+
+VSOut main(VSIn input, uint instanceId : SV_InstanceID)
+{
+    row_major float4x4 world = gInstances[instanceId];
+    float4 worldPosition = mul(float4(input.position, 1.0), world);
+
+    VSOut output;
+    output.position = mul(worldPosition, gViewProj);
+    output.world = worldPosition.xyz;
+    output.normal = mul(float4(input.normal, 0.0), world).xyz;
+    output.uv = input.uv;
+    output.tangent = normalize(float4(mul(float4(input.tangent.xyz, 0.0), world).xyz, input.tangent.w));
+    return output;
+}
+)";
+
+inline constexpr const char* kShadowInstancedVertex = R"(
 struct VSIn
 {
     float3 position : POSITION;
 };
+
+StructuredBuffer<row_major float4x4> gInstances : register(t0);
 
 cbuffer ShadowCB : register(b0)
 {
     row_major float4x4 gLightViewProj;
 };
 
-cbuffer ObjectCB : register(b1)
+float4 main(VSIn input, uint instanceId : SV_InstanceID) : SV_Position
 {
-    row_major float4x4 gWorld;
+    row_major float4x4 world = gInstances[instanceId];
+    return mul(mul(float4(input.position, 1.0), world), gLightViewProj);
+}
+)";
+
+inline constexpr const char* kGridPixel = R"(
+struct VSOut
+{
+    float4 position : SV_Position;
+    float3 world : WORLD;
+    float3 normal : NORMAL;
+    float2 uv : TEXCOORD;
+    float4 tangent : TANGENT;
 };
 
-float4 main(VSIn input) : SV_Position
+struct GBufferOut
 {
-    float4x4 worldLight = mul(gWorld, gLightViewProj);
-    return mul(float4(input.position, 1.0), worldLight);
+    float4 color : SV_Target0;
+    float4 normal : SV_Target1;
+    float4 data : SV_Target2;
+};
+
+GBufferOut main(VSOut input)
+{
+    float2 gridCoord = input.world.xz;
+    float2 lineDist = abs(frac(gridCoord) - 0.0);
+    lineDist = min(lineDist, 1.0 - lineDist);
+    float halfWidth = max(fwidth(gridCoord.x), fwidth(gridCoord.y)) * 0.5;
+    clip(halfWidth - min(lineDist.x, lineDist.y));
+
+    float2 majorCoord = gridCoord / 5.0;
+    float2 majorDist = abs(frac(majorCoord) - 0.0);
+    majorDist = min(majorDist, 1.0 - majorDist);
+    float majorLine = 1.0 - smoothstep(0.0, halfWidth * 2.0, min(majorDist.x, majorDist.y));
+
+    float originDistance = min(abs(gridCoord.x), abs(gridCoord.z));
+    float originGlow = 1.0 - smoothstep(0.0, 4.0, originDistance);
+
+    float3 lineColor = lerp(float3(0.30f, 0.33f, 0.38f), float3(0.55f, 0.60f, 0.70f), majorLine);
+    lineColor = lerp(lineColor, float3(0.90f, 0.95f, 1.00f), originGlow * 0.7);
+
+    GBufferOut output;
+    output.color = float4(lineColor, 0.0);
+    output.normal = float4(0.5f, 1.0f, 0.5f, 1.0f);
+    output.data = float4(0.0f, 0.0f, 0.0f, 1.0f);
+    return output;
 }
 )";
 

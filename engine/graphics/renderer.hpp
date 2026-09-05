@@ -33,6 +33,14 @@ struct GpuTexture
     ID3D11ShaderResourceView* srv = nullptr;
 };
 
+struct DrawEntry
+{
+    std::uint32_t meshIndex = ~0u;
+    std::uint64_t key = 0u;
+    const PbrMaterial* material = nullptr;
+    DirectX::XMFLOAT4X4 world;
+};
+
 class Renderer
 {
 public:
@@ -49,17 +57,24 @@ public:
 
     void setDebugMode(std::uint32_t mode);
 
+    std::uint32_t frameDraws() const;
+    std::uint32_t frameInstances() const;
+
 private:
     void createPipeline();
     void createStates();
     void createDefaultTextures();
-    void drawMesh(
-        std::uint32_t meshIndex,
-        const DirectX::XMMATRIX& world,
-        const PbrMaterial& material);
-    void drawShadowMesh(std::uint32_t meshIndex, const DirectX::XMMATRIX& world, bool doubleSided);
-    void drawShadowCasters();
-    void drawGBufferPass();
+    void buildEntries(const CameraFrame& frame, const Frustum& frustum);
+    void drawGBufferBatches();
+    void drawShadowBatches();
+    void drawObjectBatchRange(
+        const std::vector<DrawEntry>& entries,
+        std::size_t first,
+        std::size_t after,
+        bool shadow);
+    void drawGrid();
+
+    void bindMesh(std::uint32_t meshIndex);
 
     GraphicsDevice& device_;
     ID3D11Device* d3d_;
@@ -68,6 +83,8 @@ private:
 
     ID3D11VertexShader* gbufferVertexShader_ = nullptr;
     ID3D11PixelShader* gbufferPixelShader_ = nullptr;
+    ID3D11VertexShader* gridVertexShader_ = nullptr;
+    ID3D11PixelShader* gridPixelShader_ = nullptr;
     ID3D11VertexShader* shadowVertexShader_ = nullptr;
     ID3D11PixelShader* shadowPixelShader_ = nullptr;
     ID3D11InputLayout* inputLayout_ = nullptr;
@@ -75,7 +92,8 @@ private:
     ID3D11Buffer* sceneBuffer_ = nullptr;
     ID3D11Buffer* objectBuffer_ = nullptr;
     ID3D11Buffer* shadowBuffer_ = nullptr;
-    ID3D11Buffer* shadowWorldBuffer_ = nullptr;
+    ID3D11Buffer* instanceBuffer_ = nullptr;
+    ID3D11ShaderResourceView* instanceView_ = nullptr;
 
     ID3D11SamplerState* linearSampler_ = nullptr;
     ID3D11RasterizerState* solidState_ = nullptr;
@@ -90,8 +108,15 @@ private:
 
     std::vector<GpuMesh> meshes_;
     std::vector<GpuTexture> textures_;
+    std::vector<DrawEntry> gbufferEntries_;
+    std::vector<DrawEntry> shadowEntries_;
+    std::vector<DirectX::XMFLOAT4X4> instancedMatrices_;
+    std::uint32_t gridMesh_ = ~0u;
 
     DirectX::XMFLOAT4X4 shadowViewProjection_[kShadowCascades];
+
+    std::uint32_t frameDraws_ = 0u;
+    std::uint32_t frameInstances_ = 0u;
 
     PostProcess postProcess_;
     std::uint32_t debugMode_ = 0u;

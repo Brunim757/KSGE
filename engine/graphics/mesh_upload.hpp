@@ -21,5 +21,6 @@ void prepareMesh(const MeshData& source, PreparedMesh& out);
 
 MeshData makeCube(float size = 1.0f);
 MeshData makeSphere(std::uint32_t slices, std::uint32_t stacks, float radius = 0.5f);
+MeshData makeQuad(float width = 1.0f, float depth = 1.0f);
 
 }

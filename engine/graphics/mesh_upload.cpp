@@ -405,4 +405,45 @@ MeshData makeSphere(std::uint32_t slices, std::uint32_t stacks, float radius)
     return mesh;
 }
 
+MeshData makeQuad(float width, float depth)
+{
+    const float halfWidth = width * 0.5f;
+    const float halfDepth = depth * 0.5f;
+
+    MeshData mesh;
+    mesh.vertexCount = 4u;
+    mesh.vertexMask = VertexPosition | VertexNormal | VertexUv | VertexTangent;
+    mesh.vertexStride = kPreparedStride;
+    mesh.vertices.resize(4u * kPreparedStride);
+
+    const float positions[4][3] = {
+        {-halfWidth, 0.0f, -halfDepth},
+        {halfWidth, 0.0f, -halfDepth},
+        {halfWidth, 0.0f, halfDepth},
+        {-halfWidth, 0.0f, halfDepth},
+    };
+    const float normal[3] = {0.0f, 1.0f, 0.0f};
+    const float tangent[3] = {1.0f, 0.0f, 0.0f};
+    const float uvs[4][2] = {
+        {0.0f, 0.0f},
+        {1.0f, 0.0f},
+        {1.0f, 1.0f},
+        {0.0f, 1.0f},
+    };
+
+    for (std::uint32_t corner = 0u; corner < 4u; ++corner)
+    {
+        std::uint8_t* vertex = mesh.vertices.data() + static_cast<std::size_t>(corner) * kPreparedStride;
+        writeVertexFloat3(vertex, positions[corner]);
+        writeNormal(vertex, normal);
+        writeUv(vertex, uvs[corner]);
+        writeTangent(vertex, tangent, 1.0f);
+    }
+
+    mesh.indices = {0u, 2u, 1u, 0u, 3u, 2u};
+    mesh.boundsMin = {-halfWidth, 0.0f, -halfDepth};
+    mesh.boundsMax = {halfWidth, 0.0f, halfDepth};
+    return mesh;
+}
+
 }

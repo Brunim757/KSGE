@@ -5,6 +5,9 @@
 #include "engine/scene/components.hpp"
 #include "engine/shaders/shaders_storage.hpp"
 
+#include <algorithm>
+#include <cstring>
+
 #include <d3d11.h>
 #include <DirectXMath.h>
 
@@ -13,6 +16,7 @@ namespace ksge {
 namespace {
 
 constexpr UINT kZeroOffset = 0u;
+constexpr std::uint32_t kMaxInstancesPerBatch = 1024u;
 
 DirectX::XMFLOAT3 cameraPosition(flecs::world& world)
 {
@@ -49,10 +53,39 @@ struct ShadowConstants
     DirectX::XMFLOAT4X4 lightViewProjection;
 };
 
-struct ShadowObjectConstants
+std::uint64_t makeInstanceKey(const PbrMaterial& material, std::uint32_t meshIndex)
 {
-    DirectX::XMFLOAT4X4 world;
-};
+    std::uint64_t key = 0xcbf29ce484222325ull;
+    const auto mix = [&](std::uint32_t value)
+    {
+        key ^= value;
+        key *= 0x100000001b3ull;
+    };
+    const auto mixFloat = [&](float value)
+    {
+        std::uint32_t bits = 0u;
+        std::memcpy(&bits, &value, sizeof(bits));
+        mix(bits);
+    };
+
+    mixFloat(material.baseColorFactor.x);
+    mixFloat(material.baseColorFactor.y);
+    mixFloat(material.baseColorFactor.z);
+    mixFloat(material.baseColorFactor.w);
+    mixFloat(material.emissiveFactor.x);
+    mixFloat(material.emissiveFactor.y);
+    mixFloat(material.emissiveFactor.z);
+    mixFloat(material.metallicFactor);
+    mixFloat(material.roughnessFactor);
+    mixFloat(material.aoFactor);
+    mix(static_cast<std::uint32_t>(material.baseColorTexture));
+    mix(static_cast<std::uint32_t>(material.metallicRoughnessTexture));
+    mix(static_cast<std::uint32_t>(material.normalTexture));
+    mix(static_cast<std::uint32_t>(material.occlusionTexture));
+    mix(material.doubleSided ? 1u : 0u);
+    mix(meshIndex);
+    return key;
+}
 
 }
 
@@ -71,6 +104,23 @@ Renderer::Renderer(GraphicsDevice& device, flecs::world& world)
     createPipeline();
     createStates();
     createDefaultTextures();
+
+    D3D11_BUFFER_DESC instanceDesc = {};
+    instanceDesc.ByteWidth = static_cast<UINT>(kMaxInstancesPerBatch * sizeof(DirectX::XMFLOAT4X4));
+    instanceDesc.Usage = D3D11_USAGE_DEFAULT;
+    instanceDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    instanceDesc.StructureByteStride = sizeof(DirectX::XMFLOAT4X4);
+    d3d_->CreateBuffer(&instanceDesc, nullptr, &instanceBuffer_);
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC instanceViewDesc = {};
+    instanceViewDesc.Format = DXGI_FORMAT_UNKNOWN;
+    instanceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    instanceViewDesc.Buffer.FirstElement = 0u;
+    instanceViewDesc.Buffer.NumElements = kMaxInstancesPerBatch;
+    d3d_->CreateShaderResourceView(instanceBuffer_, &instanceViewDesc, &instanceView_);
+
+    instancedMatrices_.resize(kMaxInstancesPerBatch);
+    gridMesh_ = uploadMesh(makeQuad(40.0f, 40.0f));
 }
 
 Renderer::~Renderer()
@@ -96,6 +146,14 @@ Renderer::~Renderer()
         {
             texture.texture->Release();
         }
+    }
+    if (instanceView_)
+    {
+        instanceView_->Release();
+    }
+    if (instanceBuffer_)
+    {
+        instanceBuffer_->Release();
     }
     if (defaultEmissiveSrv_)
     {
@@ -133,10 +191,6 @@ Renderer::~Renderer()
     {
         linearSampler_->Release();
     }
-    if (shadowWorldBuffer_)
-    {
-        shadowWorldBuffer_->Release();
-    }
     if (shadowBuffer_)
     {
         shadowBuffer_->Release();
@@ -161,6 +215,14 @@ Renderer::~Renderer()
     {
         shadowVertexShader_->Release();
     }
+    if (gridPixelShader_)
+    {
+        gridPixelShader_->Release();
+    }
+    if (gridVertexShader_)
+    {
+        gridVertexShader_->Release();
+    }
     if (gbufferPixelShader_)
     {
         gbufferPixelShader_->Release();
@@ -176,7 +238,7 @@ void Renderer::createPipeline()
     std::string error;
 
     ID3DBlob* vertexBytecode = nullptr;
-    if (!createVertexShader(d3d_, shaders::kPbrVertex, gbufferVertexShader_, vertexBytecode, error) ||
+    if (!createVertexShader(d3d_, shaders::kGBufferInstancedVertex, gbufferVertexShader_, vertexBytecode, error) ||
         !createPixelShader(d3d_, shaders::kGBufferPixel, gbufferPixelShader_, error))
     {
         gbufferVertexShader_ = nullptr;
@@ -206,8 +268,20 @@ void Renderer::createPipeline()
     }
     vertexBytecode->Release();
 
+    ID3DBlob* gridBytecode = nullptr;
+    if (!createVertexShader(d3d_, shaders::kPbrVertex, gridVertexShader_, gridBytecode, error) ||
+        !createPixelShader(d3d_, shaders::kGridPixel, gridPixelShader_, error))
+    {
+        gridVertexShader_ = nullptr;
+        gridPixelShader_ = nullptr;
+    }
+    if (gridBytecode)
+    {
+        gridBytecode->Release();
+    }
+
     ID3DBlob* shadowBytecode = nullptr;
-    if (!createVertexShader(d3d_, shaders::kShadowVertex, shadowVertexShader_, shadowBytecode, error) ||
+    if (!createVertexShader(d3d_, shaders::kShadowInstancedVertex, shadowVertexShader_, shadowBytecode, error) ||
         !createPixelShader(d3d_, shaders::kShadowPixel, shadowPixelShader_, error))
     {
         shadowVertexShader_ = nullptr;
@@ -235,12 +309,6 @@ void Renderer::createPipeline()
     shadowDesc.Usage = D3D11_USAGE_DEFAULT;
     shadowDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     d3d_->CreateBuffer(&shadowDesc, nullptr, &shadowBuffer_);
-
-    D3D11_BUFFER_DESC shadowWorldDesc = {};
-    shadowWorldDesc.ByteWidth = sizeof(ShadowObjectConstants);
-    shadowWorldDesc.Usage = D3D11_USAGE_DEFAULT;
-    shadowWorldDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    d3d_->CreateBuffer(&shadowWorldDesc, nullptr, &shadowWorldBuffer_);
 }
 
 void Renderer::createStates()
@@ -390,73 +458,200 @@ std::uint32_t Renderer::uploadTexture(const TextureData& source)
     return static_cast<std::uint32_t>(textures_.size() - 1u);
 }
 
-void Renderer::drawShadowCasters()
+void Renderer::bindMesh(std::uint32_t meshIndex)
 {
-    context_->VSSetConstantBuffers(1u, 1u, &shadowWorldBuffer_);
-    context_->IASetInputLayout(inputLayout_);
-    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    context_->OMSetDepthStencilState(depthState_, 0u);
-    context_->OMSetBlendState(opaqueBlendState_, nullptr, 0xFFFFFFFFu);
+    const GpuMesh& mesh = meshes_[meshIndex];
+    context_->IASetVertexBuffers(0u, 1u, &mesh.vertices, &kPreparedStride, &kZeroOffset);
+    context_->IASetIndexBuffer(mesh.indices, DXGI_FORMAT_R32_UINT, 0u);
+}
+
+void Renderer::buildEntries(const CameraFrame& frame, const Frustum& frustum)
+{
+    gbufferEntries_.clear();
+    shadowEntries_.clear();
 
     world_.each([&](Transform& transform, MeshRenderer& meshRenderer, PbrMaterial& material)
     {
+        if (meshRenderer.meshAsset >= meshes_.size())
+        {
+            return;
+        }
         const DirectX::XMMATRIX world = worldMatrix(transform);
-        drawShadowMesh(meshRenderer.meshAsset, world, material.doubleSided);
+        const GpuMesh& mesh = meshes_[meshRenderer.meshAsset];
+
+        const DirectX::XMVECTOR localMin = DirectX::XMLoadFloat3(&mesh.boundsMin);
+        const DirectX::XMVECTOR localMax = DirectX::XMLoadFloat3(&mesh.boundsMax);
+        const DirectX::XMVECTOR localCenter = DirectX::XMVectorMultiply(
+            DirectX::XMVectorAdd(localMin, localMax), DirectX::XMVectorReplicate(0.5f));
+        const DirectX::XMVECTOR halfExtents = DirectX::XMVectorMultiply(
+            DirectX::XMVectorSubtract(localMax, localMin), DirectX::XMVectorReplicate(0.5f));
+        const DirectX::XMVECTOR worldCenter = DirectX::XMVector3TransformCoord(localCenter, world);
+
+        math::Vec3 center;
+        DirectX::XMStoreFloat3(&center, worldCenter);
+        const math::Vec3 boundsHalf = {
+            DirectX::XMVectorGetX(halfExtents),
+            DirectX::XMVectorGetY(halfExtents),
+            DirectX::XMVectorGetZ(halfExtents),
+        };
+
+        if (ksge::intersects(frustum, center, boundsHalf))
+        {
+            DrawEntry entry;
+            entry.meshIndex = meshRenderer.meshAsset;
+            entry.key = makeInstanceKey(material, meshRenderer.meshAsset);
+            entry.material = &material;
+            math::store(entry.world, world);
+            gbufferEntries_.push_back(entry);
+        }
+
+        DrawEntry shadowEntry;
+        shadowEntry.meshIndex = meshRenderer.meshAsset;
+        shadowEntry.key = meshRenderer.meshAsset;
+        shadowEntry.material = nullptr;
+        math::store(shadowEntry.world, world);
+        shadowEntries_.push_back(shadowEntry);
     });
+
+    std::sort(gbufferEntries_.begin(), gbufferEntries_.end(),
+        [](const DrawEntry& a, const DrawEntry& b) { return a.key < b.key; });
+    std::sort(shadowEntries_.begin(), shadowEntries_.end(),
+        [](const DrawEntry& a, const DrawEntry& b) { return a.key < b.key; });
 }
 
-void Renderer::drawShadowMesh(
-    std::uint32_t meshIndex,
-    const DirectX::XMMATRIX& world,
-    bool doubleSided)
+void Renderer::drawObjectBatchRange(
+    const std::vector<DrawEntry>& entries,
+    std::size_t first,
+    std::size_t after,
+    bool shadow)
 {
-    if (meshIndex >= meshes_.size() || shadowVertexShader_ == nullptr)
+    std::size_t groupStart = first;
+    while (groupStart < after)
     {
-        return;
+        const std::size_t groupEnd = groupStart + 1u;
+        const std::uint64_t groupKey = entries[groupStart].key;
+        std::size_t cursor = groupStart + 1u;
+        while (cursor < after && entries[cursor].key == groupKey)
+        {
+            ++cursor;
+        }
+
+        if (!shadow)
+        {
+            const PbrMaterial& material = *entries[groupStart].material;
+            ObjectConstants object = {};
+            math::store(object.world, DirectX::XMMatrixIdentity());
+            object.baseColorFactor = material.baseColorFactor;
+            object.mrao = {material.metallicFactor, material.roughnessFactor, material.aoFactor, 0.0f};
+            object.emissive = {
+                material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 1.0f};
+            object.hasTextures = {
+                material.baseColorTexture >= 0 ? 1.0f : 0.0f,
+                material.metallicRoughnessTexture >= 0 ? 1.0f : 0.0f,
+                material.normalTexture >= 0 ? 1.0f : 0.0f,
+                material.occlusionTexture >= 0 ? 1.0f : 0.0f,
+            };
+
+            context_->UpdateSubresource(objectBuffer_, 0u, nullptr, &object, 0u, 0u);
+            context_->VSSetConstantBuffers(1u, 1u, &objectBuffer_);
+            context_->PSSetConstantBuffers(1u, 1u, &objectBuffer_);
+
+            ID3D11ShaderResourceView* srvs[5] = {
+                material.baseColorTexture >= 0 &&
+                        static_cast<std::uint32_t>(material.baseColorTexture) < textures_.size()
+                    ? textures_[static_cast<std::size_t>(material.baseColorTexture)].srv
+                    : defaultBaseSrv_,
+                material.metallicRoughnessTexture >= 0 &&
+                        static_cast<std::uint32_t>(material.metallicRoughnessTexture) < textures_.size()
+                    ? textures_[static_cast<std::size_t>(material.metallicRoughnessTexture)].srv
+                    : defaultMrSrv_,
+                material.normalTexture >= 0 &&
+                        static_cast<std::uint32_t>(material.normalTexture) < textures_.size()
+                    ? textures_[static_cast<std::size_t>(material.normalTexture)].srv
+                    : defaultNormalSrv_,
+                material.occlusionTexture >= 0 &&
+                        static_cast<std::uint32_t>(material.occlusionTexture) < textures_.size()
+                    ? textures_[static_cast<std::size_t>(material.occlusionTexture)].srv
+                    : defaultBaseSrv_,
+                defaultEmissiveSrv_,
+            };
+            context_->PSSetShaderResources(0u, 5u, srvs);
+
+            context_->RSSetState(material.doubleSided ? doubleSidedState_ : solidState_);
+        }
+        else
+        {
+            context_->RSSetState(solidState_);
+        }
+
+        std::size_t base = groupStart;
+        while (base < groupEnd)
+        {
+            const std::size_t remaining = groupEnd - base;
+            const std::uint32_t instanceCount =
+                static_cast<std::uint32_t>(std::min<std::size_t>(kMaxInstancesPerBatch, remaining));
+            for (std::uint32_t index = 0u; index < instanceCount; ++index)
+            {
+                instancedMatrices_[index] = entries[base + index].world;
+            }
+            context_->UpdateSubresource(instanceBuffer_, 0u, nullptr, instancedMatrices_.data(), 0u, 0u);
+
+            const GpuMesh& mesh = meshes_[entries[base].meshIndex];
+            bindMesh(entries[base].meshIndex);
+            context_->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0u, 0, 0);
+            ++frameDraws_;
+            frameInstances_ += instanceCount;
+            base += instanceCount;
+        }
+
+        groupStart = cursor;
     }
-    const GpuMesh& mesh = meshes_[meshIndex];
-
-    ShadowObjectConstants object = {};
-    math::store(object.world, world);
-    context_->UpdateSubresource(shadowWorldBuffer_, 0u, nullptr, &object, 0u, 0u);
-
-    context_->RSSetState(doubleSided ? doubleSidedState_ : solidState_);
-
-    context_->IASetVertexBuffers(0u, 1u, &mesh.vertices, &kPreparedStride, &kZeroOffset);
-    context_->IASetIndexBuffer(mesh.indices, DXGI_FORMAT_R32_UINT, 0u);
-    context_->DrawIndexed(mesh.indexCount, 0u, 0);
 }
 
-void Renderer::drawGBufferPass()
+void Renderer::drawGBufferBatches()
 {
-    const CameraFrame& frame = world_.get<CameraFrame>();
-    const DirectionalLight& light = world_.get<DirectionalLight>();
-
-    SceneConstants scene = {};
-    scene.viewProjection = frame.viewProjection;
-    const DirectX::XMFLOAT3 camPosition = cameraPosition(world_);
-    scene.camPosition = {camPosition.x, camPosition.y, camPosition.z, 1.0f};
-    scene.sunDirection = {light.direction.x, light.direction.y, light.direction.z, 0.0f};
-    scene.sunColor = {light.color.x, light.color.y, light.color.z, light.intensity};
-    scene.skyTop = {0.22f, 0.42f, 0.72f, 1.0f};
-    scene.skyHorizon = {0.55f, 0.63f, 0.70f, 1.0f};
-
-    context_->UpdateSubresource(sceneBuffer_, 0u, nullptr, &scene, 0u, 0u);
-    context_->VSSetConstantBuffers(0u, 1u, &sceneBuffer_);
-    context_->PSSetConstantBuffers(0u, 1u, &sceneBuffer_);
     context_->VSSetShader(gbufferVertexShader_, nullptr, 0u);
     context_->PSSetShader(gbufferPixelShader_, nullptr, 0u);
     context_->IASetInputLayout(inputLayout_);
     context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    context_->PSSetSamplers(0u, 1u, &linearSampler_);
-    context_->OMSetBlendState(opaqueBlendState_, nullptr, 0xFFFFFFFFu);
-    context_->OMSetDepthStencilState(depthState_, 0u);
+    context_->VSSetShaderResources(0u, 1u, &instanceView_);
+    drawObjectBatchRange(gbufferEntries_, 0u, gbufferEntries_.size(), false);
+}
 
-    world_.each([&](Transform& transform, MeshRenderer& meshRenderer, PbrMaterial& material)
+void Renderer::drawShadowBatches()
+{
+    context_->VSSetShader(shadowVertexShader_, nullptr, 0u);
+    context_->PSSetShader(shadowPixelShader_, nullptr, 0u);
+    context_->IASetInputLayout(inputLayout_);
+    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context_->VSSetShaderResources(0u, 1u, &instanceView_);
+    drawObjectBatchRange(shadowEntries_, 0u, shadowEntries_.size(), true);
+}
+
+void Renderer::drawGrid()
+{
+    if (gridVertexShader_ == nullptr || gridPixelShader_ == nullptr || gridMesh_ >= meshes_.size())
     {
-        const DirectX::XMMATRIX world = worldMatrix(transform);
-        drawMesh(meshRenderer.meshAsset, world, material);
-    });
+        return;
+    }
+
+    ObjectConstants object = {};
+    math::store(object.world, DirectX::XMMatrixTranslation(0.0f, -0.5f, 0.0f));
+    context_->UpdateSubresource(objectBuffer_, 0u, nullptr, &object, 0u, 0u);
+    context_->VSSetConstantBuffers(1u, 1u, &objectBuffer_);
+    context_->PSSetConstantBuffers(1u, 1u, &objectBuffer_);
+
+    ID3D11ShaderResourceView* nullResources[5] = {};
+    context_->PSSetShaderResources(0u, 5u, nullResources);
+
+    context_->VSSetShader(gridVertexShader_, nullptr, 0u);
+    context_->PSSetShader(gridPixelShader_, nullptr, 0u);
+    context_->RSSetState(solidState_);
+
+    bindMesh(gridMesh_);
+    const GpuMesh& mesh = meshes_[gridMesh_];
+    context_->DrawIndexed(mesh.indexCount, 0u, 0);
+    ++frameDraws_;
 }
 
 void Renderer::render()
@@ -468,6 +663,8 @@ void Renderer::render()
         return;
     }
     postProcess_.attach(d3d_, context_);
+    frameDraws_ = 0u;
+    frameInstances_ = 0u;
 
     const CameraFrame& frame = world_.get<CameraFrame>();
     const DirectionalLight& light = world_.get<DirectionalLight>();
@@ -482,6 +679,10 @@ void Renderer::render()
     const DirectX::XMFLOAT3 lightDirection = {light.direction.x, light.direction.y, light.direction.z};
     computeCascadeMatrices(frame, lightDirection, nearPlane, farPlane, cascadeSplits, shadowViewProjection_);
 
+    Frustum frustum;
+    extractFrustum(frame, frustum);
+    buildEntries(frame, frustum);
+
     for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
     {
         postProcess_.beginShadowMap(cascade);
@@ -489,14 +690,31 @@ void Renderer::render()
         shadow.lightViewProjection = shadowViewProjection_[cascade];
         context_->UpdateSubresource(shadowBuffer_, 0u, nullptr, &shadow, 0u, 0u);
         context_->VSSetConstantBuffers(0u, 1u, &shadowBuffer_);
-        context_->VSSetShader(shadowVertexShader_, nullptr, 0u);
-        context_->PSSetShader(shadowPixelShader_, nullptr, 0u);
-        drawShadowCasters();
+        context_->OMSetDepthStencilState(depthState_, 0u);
+        context_->OMSetBlendState(opaqueBlendState_, nullptr, 0xFFFFFFFFu);
+        drawShadowBatches();
     }
     postProcess_.endShadowMap();
 
     postProcess_.beginScene(device_.width(), device_.height());
-    drawGBufferPass();
+
+    SceneConstants scene = {};
+    scene.viewProjection = frame.viewProjection;
+    scene.camPosition = {camPosition.x, camPosition.y, camPosition.z, 1.0f};
+    scene.sunDirection = {light.direction.x, light.direction.y, light.direction.z, 0.0f};
+    scene.sunColor = {light.color.x, light.color.y, light.color.z, light.intensity};
+    scene.skyTop = {0.22f, 0.42f, 0.72f, 1.0f};
+    scene.skyHorizon = {0.55f, 0.63f, 0.70f, 1.0f};
+
+    context_->UpdateSubresource(sceneBuffer_, 0u, nullptr, &scene, 0u, 0u);
+    context_->VSSetConstantBuffers(0u, 1u, &sceneBuffer_);
+    context_->PSSetConstantBuffers(0u, 1u, &sceneBuffer_);
+    context_->PSSetSamplers(0u, 1u, &linearSampler_);
+    context_->OMSetBlendState(opaqueBlendState_, nullptr, 0xFFFFFFFFu);
+    context_->OMSetDepthStencilState(depthState_, 0u);
+
+    drawGBufferBatches();
+    drawGrid();
     postProcess_.endScene();
 
     PostFrameInfo info = {};
@@ -534,66 +752,14 @@ void Renderer::setDebugMode(std::uint32_t mode)
     debugMode_ = mode & 0x7u;
 }
 
-void Renderer::drawMesh(
-    std::uint32_t meshIndex,
-    const DirectX::XMMATRIX& world,
-    const PbrMaterial& material)
+std::uint32_t Renderer::frameDraws() const
 {
-    if (meshIndex >= meshes_.size())
-    {
-        return;
-    }
-    const GpuMesh& mesh = meshes_[meshIndex];
+    return frameDraws_;
+}
 
-    ObjectConstants object = {};
-    math::store(object.world, world);
-    object.baseColorFactor = material.baseColorFactor;
-    object.mrao = {material.metallicFactor, material.roughnessFactor, material.aoFactor, 0.0f};
-    object.emissive = {material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 1.0f};
-    object.hasTextures = {
-        material.baseColorTexture >= 0 ? 1.0f : 0.0f,
-        material.metallicRoughnessTexture >= 0 ? 1.0f : 0.0f,
-        material.normalTexture >= 0 ? 1.0f : 0.0f,
-        material.occlusionTexture >= 0 ? 1.0f : 0.0f,
-    };
-
-    context_->UpdateSubresource(objectBuffer_, 0u, nullptr, &object, 0u, 0u);
-    context_->VSSetConstantBuffers(1u, 1u, &objectBuffer_);
-    context_->PSSetConstantBuffers(1u, 1u, &objectBuffer_);
-
-    ID3D11ShaderResourceView* srvs[5] = {
-        material.baseColorTexture >= 0 &&
-                static_cast<std::uint32_t>(material.baseColorTexture) < textures_.size()
-            ? textures_[static_cast<std::size_t>(material.baseColorTexture)].srv
-            : defaultBaseSrv_,
-        material.metallicRoughnessTexture >= 0 &&
-                static_cast<std::uint32_t>(material.metallicRoughnessTexture) < textures_.size()
-            ? textures_[static_cast<std::size_t>(material.metallicRoughnessTexture)].srv
-            : defaultMrSrv_,
-        material.normalTexture >= 0 &&
-                static_cast<std::uint32_t>(material.normalTexture) < textures_.size()
-            ? textures_[static_cast<std::size_t>(material.normalTexture)].srv
-            : defaultNormalSrv_,
-        material.occlusionTexture >= 0 &&
-                static_cast<std::uint32_t>(material.occlusionTexture) < textures_.size()
-            ? textures_[static_cast<std::size_t>(material.occlusionTexture)].srv
-            : defaultBaseSrv_,
-        defaultEmissiveSrv_,
-    };
-    context_->PSSetShaderResources(0u, 5u, srvs);
-
-    if (material.doubleSided)
-    {
-        context_->RSSetState(doubleSidedState_);
-    }
-    else
-    {
-        context_->RSSetState(solidState_);
-    }
-
-    context_->IASetVertexBuffers(0u, 1u, &mesh.vertices, &kPreparedStride, &kZeroOffset);
-    context_->IASetIndexBuffer(mesh.indices, DXGI_FORMAT_R32_UINT, 0u);
-    context_->DrawIndexed(mesh.indexCount, 0u, 0);
+std::uint32_t Renderer::frameInstances() const
+{
+    return frameInstances_;
 }
 
 }

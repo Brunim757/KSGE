@@ -9,7 +9,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <cmath>
 
 namespace {
 
@@ -28,6 +30,46 @@ bool hasFlag(int argc, char** argv, const char* flag)
         }
     }
     return false;
+}
+
+int parameterValue(int argc, char** argv, const char* flag, int fallback)
+{
+    for (int i = 1; i < argc - 1; ++i)
+    {
+        if (std::strcmp(argv[i], flag) == 0)
+        {
+            return std::atoi(argv[i + 1]);
+        }
+    }
+    return fallback;
+}
+
+void spawnStressScene(flecs::world& world, std::uint32_t count, std::uint32_t mesh)
+{
+    const std::uint32_t side = static_cast<std::uint32_t>(std::ceil(std::sqrt(static_cast<float>(count))));
+    const float spacing = 1.6f;
+    for (std::uint32_t index = 0u; index < count; ++index)
+    {
+        const float x = (static_cast<float>(index % side) - static_cast<float>(side) * 0.5f) * spacing;
+        const float z = (static_cast<float>(index / side) - static_cast<float>(side) * 0.5f) * spacing;
+
+        ksge::PbrMaterial material;
+        if ((index % 2u) == 0u)
+        {
+            material.metallicFactor = 1.0f;
+            material.roughnessFactor = 0.2f;
+        }
+        else
+        {
+            material.metallicFactor = 0.0f;
+            material.roughnessFactor = 0.8f;
+        }
+
+        world.entity()
+            .set<ksge::Transform>({{x, 0.35f, z}, {0.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.8f}})
+            .set<ksge::MeshRenderer>({mesh})
+            .set<ksge::PbrMaterial>(material);
+    }
 }
 
 void spawnDemoScene(
@@ -69,6 +111,7 @@ void spawnDemoScene(
 int main(int argc, char** argv)
 {
     const bool selfTest = hasFlag(argc, argv, "--selftest");
+    const int stressCount = parameterValue(argc, argv, "--stress", 0);
 
     ksge::Window window(kDefaultWidth, kDefaultHeight, "KSGE Editor");
     ksge::GraphicsDevice device(window.nativeHandle(), kDefaultWidth, kDefaultHeight);
@@ -80,6 +123,10 @@ int main(int argc, char** argv)
     const std::uint32_t cubeMesh = renderer.uploadMesh(ksge::makeCube(1.0f));
     const std::uint32_t sphereMesh = renderer.uploadMesh(ksge::makeSphere(48u, 24u, 1.0f));
     spawnDemoScene(world.handle(), cubeMesh, sphereMesh, cubeMesh);
+    if (stressCount > 0)
+    {
+        spawnStressScene(world.handle(), static_cast<std::uint32_t>(stressCount), cubeMesh);
+    }
 
     std::int32_t frameCount = 0;
     std::uint32_t previousDebugKeys = 0u;
@@ -135,14 +182,14 @@ int main(int argc, char** argv)
             const std::uint32_t mode = static_cast<std::uint32_t>(frameCount / 30) % 7u;
             renderer.setDebugMode(mode);
             float luminance = 0.0f;
-            if (device.readAverageLuminance(luminance))
-            {
-                std::printf(
-                    "KSGE selftest frame %d mode %u luminance %.4f\n",
-                    frameCount,
-                    static_cast<unsigned>(mode),
-                    luminance);
-            }
+            device.readAverageLuminance(luminance);
+            std::printf(
+                "KSGE selftest frame %d mode %u luminance %.4f draws %u instances %u\n",
+                frameCount,
+                static_cast<unsigned>(mode),
+                luminance,
+                renderer.frameDraws(),
+                renderer.frameInstances());
         }
         device.present();
 

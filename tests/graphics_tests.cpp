@@ -50,13 +50,19 @@ void testShaderSourcesCompile()
         bytecode->Release();
         bytecode = nullptr;
     }
+    CHECK(ksge::compileShaderSource(ksge::shaders::kGBufferInstancedVertex, "main", "vs_5_0", bytecode, error));
+    if (bytecode)
+    {
+        bytecode->Release();
+        bytecode = nullptr;
+    }
     CHECK(ksge::compileShaderSource(ksge::shaders::kGBufferPixel, "main", "ps_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
         bytecode = nullptr;
     }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kShadowVertex, "main", "vs_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kShadowInstancedVertex, "main", "vs_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
@@ -68,6 +74,21 @@ void testShaderSourcesCompile()
         bytecode->Release();
         bytecode = nullptr;
     }
+    CHECK(ksge::compileShaderSource(ksge::shaders::kGridPixel, "main", "ps_5_0", bytecode, error));
+    if (bytecode)
+    {
+        bytecode->Release();
+        bytecode = nullptr;
+    }
+}
+
+void testMakeQuad()
+{
+    const ksge::MeshData quad = ksge::makeQuad(4.0f, 2.0f);
+    CHECK(quad.vertexCount == 4u);
+    CHECK(quad.indices.size() == 6u);
+    checkNear(quad.boundsMin.x, -2.0f, 1.0e-5f, "quad bounds min x");
+    checkNear(quad.boundsMax.z, 1.0f, 1.0e-5f, "quad bounds max z");
 }
 
 void testPostProcessShadersCompile()
@@ -307,6 +328,7 @@ int runGraphicsTests()
     testPostProcessShadersCompile();
     testCascadeSplits();
     testCascadeMatrices();
+    testMakeQuad();
     testGradingLutIdentity();
     testGradingLutContrast();
     testGradingLutSaturation();

@@ -26,6 +26,8 @@ jobs:
         run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
       - name: Smoke test
         run: build\${{ matrix.config }}\ksge_editor.exe --selftest
+      - name: Smoke test (stress)
+        run: build\${{ matrix.config }}\ksge_editor.exe --selftest --stress 1000
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
