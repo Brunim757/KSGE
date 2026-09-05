@@ -39,25 +39,25 @@ void testShaderSourcesCompile()
     ID3DBlob* bytecode = nullptr;
     std::string error;
 
-    CHECK(compileShaderSource(ksge::shaders::kPbrVertex, "main", "vs_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kPbrVertex, "main", "vs_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
         bytecode = nullptr;
     }
-    CHECK(compileShaderSource(ksge::shaders::kPbrPixel, "main", "ps_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kPbrPixel, "main", "ps_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
         bytecode = nullptr;
     }
-    CHECK(compileShaderSource(ksge::shaders::kSkyVertex, "main", "vs_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kSkyVertex, "main", "vs_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
         bytecode = nullptr;
     }
-    CHECK(compileShaderSource(ksge::shaders::kSkyPixel, "main", "ps_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kSkyPixel, "main", "ps_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
@@ -107,7 +107,7 @@ void testPrepareTriangle()
 
 void testCubeStructure()
 {
-    const ksge::MeshData cube = makeCube(1.0f);
+    const ksge::MeshData cube = ksge::makeCube(1.0f);
     CHECK(cube.vertexCount == 24u);
     CHECK(cube.indices.size() == 36u);
     CHECK((cube.vertexMask & (ksge::VertexPosition | ksge::VertexNormal | ksge::VertexUv | ksge::VertexTangent)) != 0u);
@@ -125,7 +125,7 @@ void testCubeStructure()
 
 void testSphereNormals()
 {
-    const ksge::MeshData sphere = makeSphere(16u, 8u, 0.5f);
+    const ksge::MeshData sphere = ksge::makeSphere(16u, 8u, 0.5f);
     ksge::PreparedMesh prepared;
     prepareMesh(sphere, prepared);
     CHECK(prepared.vertexCount == sphere.vertexCount);
