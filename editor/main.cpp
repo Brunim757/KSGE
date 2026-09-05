@@ -105,7 +105,7 @@ int main(int argc, char** argv)
         if (window.takeResize(width, height))
         {
             device.resize(width, height);
-            cameraService.editorCamera().get_mut<ksge::Camera>()->aspectRatio =
+            cameraService.editorCamera().get_mut<ksge::Camera>().aspectRatio =
                 static_cast<float>(width) / static_cast<float>(height);
         }
 
