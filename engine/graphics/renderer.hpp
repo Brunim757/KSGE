@@ -7,6 +7,8 @@
 
 #include <flecs.h>
 
+#include "engine/assets/mesh_data.hpp"
+#include "engine/assets/texture_data.hpp"
 #include "engine/graphics/device.hpp"
 #include "engine/graphics/mesh_upload.hpp"
 #include "engine/scene/components.hpp"

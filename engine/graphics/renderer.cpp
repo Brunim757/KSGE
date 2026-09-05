@@ -411,16 +411,16 @@ std::uint32_t Renderer::uploadTexture(const TextureData& source)
 
 void Renderer::render()
 {
-    const CameraFrame* frame = world_.get<CameraFrame>();
-    if (!frame || pbrVertexShader_ == nullptr || pbrPixelShader_ == nullptr)
+    if (pbrVertexShader_ == nullptr || pbrPixelShader_ == nullptr)
     {
         return;
     }
 
+    const CameraFrame& frame = world_.get<CameraFrame>();
     const DirectionalLight& light = world_.get<DirectionalLight>();
 
     SceneConstants scene = {};
-    scene.viewProjection = frame->viewProjection;
+    scene.viewProjection = frame.viewProjection;
     const DirectX::XMFLOAT3 camPosition = cameraPosition(world_);
     scene.camPosition = {camPosition.x, camPosition.y, camPosition.z, 1.0f};
     scene.sunDirection = {light.direction.x, light.direction.y, light.direction.z, 0.0f};
@@ -506,16 +506,11 @@ void Renderer::drawSky()
         return;
     }
 
-    const CameraFrame* frame = world_.get<CameraFrame>();
-    if (!frame)
-    {
-        return;
-    }
-
+    const CameraFrame& frame = world_.get<CameraFrame>();
     const DirectionalLight& light = world_.get<DirectionalLight>();
 
     SkyConstants sky = {};
-    sky.viewProjection = makeSkyViewProj(*frame);
+    sky.viewProjection = makeSkyViewProj(frame);
     const DirectX::XMFLOAT3 camPosition = cameraPosition(world_);
     sky.camPosition = {camPosition.x, camPosition.y, camPosition.z, 1.0f};
     sky.sunDirection = {light.direction.x, light.direction.y, light.direction.z, 0.0f};
