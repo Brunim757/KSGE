@@ -110,13 +110,14 @@ void checkLutChannel(
     std::uint32_t r,
     std::uint32_t g,
     std::uint32_t b,
+    std::uint32_t channel,
     float expected,
     float tolerance,
     const char* what)
 {
     const std::size_t pixel =
         (static_cast<std::size_t>(b) * size + g) * size + r;
-    const float actual = lut[pixel * 4u];
+    const float actual = lut[pixel * 4u + channel];
     if (actual < expected - tolerance || actual > expected + tolerance)
     {
         std::printf("FAIL: %s (actual=%.5f expected=%.5f)\n", what, actual, expected);
@@ -134,9 +135,9 @@ void testGradingLutIdentity()
     params.saturation = 1.0f;
     ksge::generateGradingLut(lut.data(), size, params);
 
-    checkLutChannel(lut, size, 8u, 16u, 17u, 8.0f / 32.0f, 1.0e-4f, "lut identity r");
-    checkLutChannel(lut, size, 8u, 16u, 17u, 16.0f / 32.0f, 1.0e-4f, "lut identity g");
-    checkLutChannel(lut, size, 8u, 16u, 17u, 17.0f / 32.0f, 1.0e-4f, "lut identity b");
+    checkLutChannel(lut, size, 8u, 16u, 17u, 0u, 8.0f / 32.0f, 1.0e-4f, "lut identity r");
+    checkLutChannel(lut, size, 8u, 16u, 17u, 1u, 16.0f / 32.0f, 1.0e-4f, "lut identity g");
+    checkLutChannel(lut, size, 8u, 16u, 17u, 2u, 17.0f / 32.0f, 1.0e-4f, "lut identity b");
 }
 
 void testGradingLutContrast()
@@ -149,8 +150,8 @@ void testGradingLutContrast()
     params.saturation = 1.0f;
     ksge::generateGradingLut(lut.data(), size, params);
 
-    checkLutChannel(lut, size, 8u, 8u, 8u, 0.0f, 1.0e-4f, "lut contrast dark zero");
-    checkLutChannel(lut, size, 24u, 24u, 24u, 1.0f, 1.0e-4f, "lut contrast bright one");
+    checkLutChannel(lut, size, 8u, 8u, 8u, 0u, 0.0f, 1.0e-4f, "lut contrast dark zero");
+    checkLutChannel(lut, size, 24u, 24u, 24u, 0u, 1.0f, 1.0e-4f, "lut contrast bright one");
 }
 
 void testGradingLutSaturation()
