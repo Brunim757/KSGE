@@ -6,6 +6,7 @@
 #include "engine/platform/window.hpp"
 #include "engine/scene/camera_service.hpp"
 #include "engine/scene/components.hpp"
+#include "engine/world/chunk_streamer.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -131,6 +132,9 @@ int main(int argc, char** argv)
         spawnStressScene(world.handle(), static_cast<std::uint32_t>(stressCount), cubeMesh);
     }
 
+    ksge::ChunkStreamer streamer(world.handle(), cubeMesh, sphereMesh);
+    streamer.setRadius(120.0f);
+
     std::int32_t frameCount = 0;
     std::uint32_t previousDebugKeys = 0u;
     constexpr ksge::KeyCode kDebugKeys[7] = {
@@ -178,6 +182,14 @@ int main(int argc, char** argv)
         previousDebugKeys = debugKeys;
 
         world.step();
+        if (selfTest && frameCount == 150)
+        {
+            cameraService.editorCamera().get_mut<ksge::Transform>().position = {4200.0f, 5.0f, -3000.0f};
+            streamer.saveAll();
+        }
+        const ksge::math::Vec3 cameraPosition =
+            cameraService.editorCamera().get<ksge::Transform>().position;
+        streamer.update(cameraPosition.x, cameraPosition.z);
         device.beginFrame(kClearColor);
         renderer.render();
         if (selfTest && (frameCount % 30) == 0)
@@ -189,7 +201,8 @@ int main(int argc, char** argv)
             device.readAverageLuminance(luminance);
             std::printf(
                 "KSGE selftest frame %d mode %u luminance %.4f cpu %.2fms gpu %.2fms "
-                "entities %u(transform %u) gathered %u pushed %u gbPushed %u draws %u(gb %u sh %u) instances %u(gb %u sh %u)\n",
+                "entities %u(transform %u) gathered %u pushed %u gbPushed %u chunks %u pending %u "
+                "draws %u(gb %u sh %u) instances %u(gb %u sh %u)\n",
                 frameCount,
                 static_cast<unsigned>(mode),
                 luminance,
@@ -200,6 +213,8 @@ int main(int argc, char** argv)
                 renderer.frameGathered(),
                 renderer.framePushed(),
                 renderer.gbufferPushed(),
+                static_cast<unsigned>(streamer.activeChunks()),
+                static_cast<unsigned>(streamer.pendingJobs()),
                 renderer.frameDraws(),
                 renderer.gbufferDraws(),
                 renderer.shadowDraws(),

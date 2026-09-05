@@ -68,4 +68,11 @@ struct Ray
     math::Vec3 direction;
 };
 
+struct ChunkComponent
+{
+    std::int32_t coordX = 0;
+    std::int32_t coordZ = 0;
+    std::uint32_t revision = 0u;
+};
+
 }

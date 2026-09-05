@@ -6,6 +6,7 @@
 #include "engine/graphics/shader_compiler.hpp"
 #include "engine/scene/camera.hpp"
 #include "engine/shaders/shaders_storage.hpp"
+#include "engine/world/chunk_streamer.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -245,6 +246,34 @@ void testCascadeMatrices()
     }
 }
 
+void testChunkSerialization()
+{
+    std::vector<ksge::ChunkSpawn> source;
+    for (std::uint32_t index = 0u; index < 4u; ++index)
+    {
+        ksge::ChunkSpawn entity;
+        entity.gridX = 3;
+        entity.gridZ = -2;
+        entity.meshIndex = index % 2u;
+        entity.materialVariant = index;
+        entity.position = {0.5f, 1.0f + index, -0.5f};
+        entity.scale = {0.8f, 0.8f, 0.8f};
+        source.push_back(entity);
+    }
+    CHECK(ksge::serializeChunkFile("chunk_serialize_test.bin", source));
+
+    std::vector<ksge::ChunkSpawn> loaded;
+    CHECK(ksge::deserializeChunkFile("chunk_serialize_test.bin", loaded));
+    CHECK(loaded.size() == source.size());
+    if (loaded.size() == source.size())
+    {
+        checkNear(loaded[2].position.y, 3.0f, 1.0e-4f, "chunk roundtrip position y");
+        CHECK(loaded[2].gridX == 3);
+        CHECK(loaded[2].gridZ == -2);
+    }
+    std::remove("chunk_serialize_test.bin");
+}
+
 void testPrepareTriangle()
 {
     ksge::MeshData triangle;
@@ -319,6 +348,7 @@ int runGraphicsTests()
     testCascadeSplits();
     testCascadeMatrices();
     testMakeQuad();
+    testChunkSerialization();
     testGradingLutIdentity();
     testGradingLutContrast();
     testGradingLutSaturation();

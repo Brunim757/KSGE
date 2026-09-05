@@ -32,6 +32,7 @@ add_library(ksge_engine STATIC
     engine/platform/window.cpp
     engine/scene/camera.cpp
     engine/scene/camera_service.cpp
+    engine/world/chunk_streamer.cpp
 )
 target_include_directories(ksge_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ksge_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
