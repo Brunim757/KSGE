@@ -822,7 +822,7 @@ void Renderer::render()
     DirectX::XMVECTOR determinant = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
     const DirectX::XMMATRIX inverse = DirectX::XMMatrixInverse(&determinant, displayViewProjection);
     math::store(info.inverseViewProjection, inverse);
-    math::store(info.previousViewProjection, previousViewProjection_);
+    math::store(info.previousViewProjection, math::load(previousViewProjection_));
     math::store(previousViewProjection_, displayViewProjection);
     info.cameraPosition = {camPosition.x, camPosition.y, camPosition.z};
     info.nearPlane = nearPlane;
