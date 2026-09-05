@@ -541,6 +541,7 @@ void Renderer::buildEntries(const Frustum& frustum)
             entry.material = &material;
             math::store(entry.world, world);
             gbufferEntries_.push_back(entry);
+            ++frameGbufferPushed_;
         }
 
         DrawEntry shadowEntry;
@@ -549,6 +550,7 @@ void Renderer::buildEntries(const Frustum& frustum)
         shadowEntry.material = nullptr;
         math::store(shadowEntry.world, world);
         shadowEntries_.push_back(shadowEntry);
+        ++frameShadowPushed_;
     });
 
     std::sort(gbufferEntries_.begin(), gbufferEntries_.end(),
@@ -719,6 +721,8 @@ void Renderer::render()
     shadowDraws_ = 0u;
     shadowInstances_ = 0u;
     frameGathered_ = 0u;
+    frameShadowPushed_ = 0u;
+    frameGbufferPushed_ = 0u;
 
     if (disjointQuery_)
     {
@@ -902,6 +906,16 @@ float Renderer::frameGpuMs() const
 std::uint32_t Renderer::frameGathered() const
 {
     return frameGathered_;
+}
+
+std::uint32_t Renderer::framePushed() const
+{
+    return frameShadowPushed_;
+}
+
+std::uint32_t Renderer::gbufferPushed() const
+{
+    return frameGbufferPushed_;
 }
 
 }

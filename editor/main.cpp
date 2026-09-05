@@ -189,7 +189,7 @@ int main(int argc, char** argv)
             device.readAverageLuminance(luminance);
             std::printf(
                 "KSGE selftest frame %d mode %u luminance %.4f cpu %.2fms gpu %.2fms "
-                "entities %u(transform %u) gathered %u draws %u(gb %u sh %u) instances %u(gb %u sh %u)\n",
+                "entities %u(transform %u) gathered %u pushed %u gbPushed %u draws %u(gb %u sh %u) instances %u(gb %u sh %u)\n",
                 frameCount,
                 static_cast<unsigned>(mode),
                 luminance,
@@ -198,6 +198,8 @@ int main(int argc, char** argv)
                 static_cast<unsigned>(3u + static_cast<std::uint32_t>(stressCount)),
                 static_cast<unsigned>(world.handle().count<ksge::Transform>()),
                 renderer.frameGathered(),
+                renderer.framePushed(),
+                renderer.gbufferPushed(),
                 renderer.frameDraws(),
                 renderer.gbufferDraws(),
                 renderer.shadowDraws(),
