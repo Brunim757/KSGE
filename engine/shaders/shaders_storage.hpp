@@ -638,7 +638,7 @@ float4 main(VSOut input) : SV_Target
 
     float3 color = scene;
     color *= 1.0 - (1.0 - ao) * saturate(gCompositeParams.x);
-    color = color * (1.0 - fog.a * gCompositeParams.z) + fog.rgb * gCompositeParams.z;
+    color = color * (1.0 - (1.0 - fog.a) * gCompositeParams.z) + fog.rgb * gCompositeParams.z;
     color += bloom * gCompositeParams.y;
     color = acesToneMap(color);
     color = gLut.Sample(gLinearSampler, saturate(color)).xyz;
