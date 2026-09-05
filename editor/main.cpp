@@ -1,8 +1,11 @@
 #include "engine/core/world.hpp"
 #include "engine/graphics/device.hpp"
+#include "engine/graphics/mesh_upload.hpp"
+#include "engine/graphics/renderer.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/window.hpp"
 #include "engine/scene/camera_service.hpp"
+#include "engine/scene/components.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -26,6 +29,56 @@ bool hasFlag(int argc, char** argv, const char* flag)
     return false;
 }
 
+void spawnDemoScene(
+    ksge::Renderer& renderer,
+    flecs::world& world,
+    std::uint32_t floorMesh,
+    std::uint32_t sphereMesh,
+    std::uint32_t cubeMesh)
+{
+    auto spawn = [&](std::uint32_t meshAsset,
+                     const ksge::math::Vec3& position,
+                     const ksge::math::Vec3& scale,
+                     const ksge::PbrMaterial& material)
+    {
+        world.entity()
+            .set<ksge::Transform>({position, {0.0f, 0.0f, 0.0f, 1.0f}, scale})
+            .set<ksge::MeshRenderer>({meshAsset})
+            .set<ksge::PbrMaterial>(material);
+    };
+
+    ksge::PbrMaterial concrete;
+    concrete.metallicFactor = 0.0f;
+    concrete.roughnessFactor = 0.9f;
+    spawn(floorMesh, {0.0f, -1.0f, 0.0f}, {30.0f, 1.0f, 30.0f}, concrete);
+
+    ksge::PbrMaterial metal;
+    metal.metallicFactor = 1.0f;
+    metal.roughnessFactor = 0.15f;
+    spawn(sphereMesh, {0.0f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, metal);
+
+    ksge::PbrMaterial rough;
+    rough.metallicFactor = 0.0f;
+    rough.roughnessFactor = 1.0f;
+    spawn(sphereMesh, {-2.2f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, rough);
+
+    ksge::PbrMaterial glow;
+    glow.metallicFactor = 0.0f;
+    glow.roughnessFactor = 0.5f;
+    glow.emissiveFactor = {1.0f, 0.3f, 0.1f};
+    spawn(cubeMesh, {2.2f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, glow);
+
+    ksge::PbrMaterial stone;
+    stone.metallicFactor = 0.1f;
+    stone.roughnessFactor = 0.65f;
+    spawn(cubeMesh, {-1.4f, 0.4f, -2.0f}, {0.8f, 0.8f, 0.8f}, stone);
+
+    ksge::PbrMaterial polished;
+    polished.metallicFactor = 0.9f;
+    polished.roughnessFactor = 0.35f;
+    spawn(sphereMesh, {1.4f, 0.4f, -2.0f}, {0.9f, 0.9f, 0.9f}, polished);
+}
+
 }
 
 int main(int argc, char** argv)
@@ -37,6 +90,11 @@ int main(int argc, char** argv)
     ksge::World world;
     ksge::Input input;
     ksge::CameraService cameraService(world.handle());
+
+    ksge::Renderer renderer(device, world.handle());
+    const std::uint32_t cubeMesh = renderer.uploadMesh(ksge::makeCube(1.0f));
+    const std::uint32_t sphereMesh = renderer.uploadMesh(ksge::makeSphere(48u, 24u, 1.0f));
+    spawnDemoScene(renderer, world.handle(), cubeMesh, sphereMesh, cubeMesh);
 
     std::int32_t frameCount = 0;
     while (!window.shouldClose())
@@ -55,6 +113,7 @@ int main(int argc, char** argv)
 
         world.step();
         device.beginFrame(kClearColor);
+        renderer.render();
         device.present();
 
         ++frameCount;

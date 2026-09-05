@@ -11,6 +11,33 @@ struct Transform
     math::Vec3 scale{1.0f, 1.0f, 1.0f};
 };
 
+struct MeshRenderer
+{
+    std::uint32_t meshAsset = ~0u;
+};
+
+struct PbrMaterial
+{
+    DirectX::XMFLOAT4 baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
+    DirectX::XMFLOAT3 emissiveFactor{0.0f, 0.0f, 0.0f};
+    float metallicFactor = 0.0f;
+    float roughnessFactor = 0.5f;
+    float aoFactor = 1.0f;
+    std::int32_t baseColorTexture = -1;
+    std::int32_t metallicRoughnessTexture = -1;
+    std::int32_t normalTexture = -1;
+    std::int32_t occlusionTexture = -1;
+    bool doubleSided = false;
+};
+
+struct DirectionalLight
+{
+    math::Vec3 direction{0.3f, -0.8f, -0.5f};
+    float intensity = 3.0f;
+    DirectX::XMFLOAT3 color{1.0f, 0.95f, 0.85f};
+    float ambientStrength = 0.05f;
+};
+
 struct Camera
 {
     float yaw = 0.0f;

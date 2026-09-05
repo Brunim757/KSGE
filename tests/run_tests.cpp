@@ -2,6 +2,7 @@
 #include "engine/scene/components.hpp"
 #include "engine/scene/math.hpp"
 #include "tests/asset_tests.hpp"
+#include "tests/graphics_tests.hpp"
 
 #include <DirectXMath.h>
 #include <cmath>
@@ -211,6 +212,7 @@ int main()
     testRayAabb();
 
     failures += runAssetTests();
+    failures += runGraphicsTests();
 
     if (failures == 0)
     {
