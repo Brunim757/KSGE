@@ -156,7 +156,7 @@ void ChunkStreamer::workerLoop()
     }
 }
 
-ChunkResult ChunkStreamer::produceChunk(std::int32_t gridX, std::int32_t gridZ)
+ChunkStreamer::ChunkResult ChunkStreamer::produceChunk(std::int32_t gridX, std::int32_t gridZ)
 {
     ChunkResult result;
     result.spawns.reserve(6u);
