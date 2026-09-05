@@ -105,6 +105,9 @@ void testPostProcessShadersCompile()
         ksge::shaders::kBloomBlurHBody,
         ksge::shaders::kBloomBlurVBody,
         ksge::shaders::kBloomUpsampleBody,
+        ksge::shaders::kSceneBlendBody,
+        ksge::shaders::kTaaBody,
+        ksge::shaders::kFinalBody,
         ksge::shaders::kCompositeBody,
     };
     for (const char* body : bodies)

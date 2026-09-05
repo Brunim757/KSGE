@@ -42,6 +42,7 @@ struct PostConstants
     DirectX::XMFLOAT4 shadowParams;
     DirectX::XMFLOAT4 compositeParams;
     DirectX::XMFLOAT4X4 shadowViewProjection[kShadowCascades];
+    DirectX::XMFLOAT4X4 previousViewProjection;
 };
 
 constexpr UINT kFullscreenVertexCount = 3u;
@@ -236,6 +237,22 @@ void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuf
     postShadowDepthBias_ = info.shadowDepthBias;
     postExposure_ = info.exposure;
     postDebugMode_ = info.debugMode;
+    postPrevViewProj_ = info.previousViewProjection;
+
+    if (postDebugMode_ != lastDebugMode_)
+    {
+        taaValid_ = false;
+        lastDebugMode_ = postDebugMode_;
+    }
+
+    if (postDebugMode_ == 0u)
+    {
+        if (sceneBlendShader_ == nullptr || taaShader_ == nullptr || finalShader_ == nullptr)
+        {
+            clearTarget(taaHistory_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+            clearTarget(taaResult_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+        }
+    }
 
     if (ssaoShader_ == nullptr)
     {
@@ -276,7 +293,16 @@ void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuf
     applySky();
     applyFog();
     applyBloom();
-    applyComposite(backbuffer);
+    if (postDebugMode_ == 0u)
+    {
+        applySceneBlend();
+        applyTaa();
+        applyFinal(backbuffer);
+    }
+    else
+    {
+        applyDebugComposite(backbuffer);
+    }
 }
 
 void PostProcess::applySsao()
@@ -479,7 +505,79 @@ void PostProcess::applyBloom()
     }
 }
 
-void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
+void PostProcess::applySceneBlend()
+{
+    if (sceneBlendShader_ == nullptr || blend_.rtv == nullptr ||
+        sceneColor_.srv == nullptr || ssr_.srv == nullptr || ssgi_.srv == nullptr ||
+        fog_.srv == nullptr || bloomBase_.srv == nullptr)
+    {
+        return;
+    }
+    beginPass(blend_.rtv, static_cast<float>(width_), static_cast<float>(height_), false, sceneBlendShader_);
+    uploadConstants(width_, height_);
+    ID3D11ShaderResourceView* resources[6] = {
+        sceneColor_.srv,
+        ssr_.srv,
+        ssgi_.srv,
+        fog_.srv,
+        bloomBase_.srv,
+        bloomAccum_.srv,
+    };
+    context_->PSSetShaderResources(0u, 6u, resources);
+    drawFullscreen();
+    clearResources();
+}
+
+void PostProcess::applyTaa()
+{
+    if (taaShader_ == nullptr || taaResult_.rtv == nullptr ||
+        blend_.srv == nullptr || taaHistory_.srv == nullptr || depth_.srv == nullptr)
+    {
+        return;
+    }
+    beginPass(taaResult_.rtv, static_cast<float>(width_), static_cast<float>(height_), false, taaShader_);
+    uploadConstants(width_, height_);
+    ID3D11ShaderResourceView* resources[3] = {blend_.srv, taaHistory_.srv, depth_.srv};
+    context_->PSSetShaderResources(0u, 3u, resources);
+    drawFullscreen();
+    clearResources();
+
+    ID3D11RenderTargetView* historyTarget = taaHistory_.rtv;
+    context_->OMSetRenderTargets(1u, &historyTarget, nullptr);
+    D3D11_VIEWPORT viewport = {};
+    defaultViewport(viewport);
+    viewport.Width = static_cast<float>(width_);
+    viewport.Height = static_cast<float>(height_);
+    context_->RSSetViewports(1u, &viewport);
+    context_->IASetInputLayout(nullptr);
+    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context_->VSSetShader(fullscreenVertex_, nullptr, 0u);
+    context_->PSSetShader(copyShader_, nullptr, 0u);
+    bindSamplers();
+    ID3D11ShaderResourceView* copyResources[1] = {taaResult_.srv};
+    context_->PSSetShaderResources(0u, 1u, copyResources);
+    drawFullscreen();
+    clearResources();
+    taaValid_ = true;
+}
+
+void PostProcess::applyFinal(ID3D11RenderTargetView* backbuffer)
+{
+    if (finalShader_ == nullptr || backbuffer == nullptr || taaResult_.srv == nullptr ||
+        lutView_ == nullptr)
+    {
+        drawSceneFallback(backbuffer);
+        return;
+    }
+    beginPass(backbuffer, static_cast<float>(width_), static_cast<float>(height_), false, finalShader_);
+    uploadConstants(width_, height_);
+    ID3D11ShaderResourceView* resources[2] = {taaResult_.srv, lutView_};
+    context_->PSSetShaderResources(0u, 2u, resources);
+    drawFullscreen();
+    clearResources();
+}
+
+void PostProcess::applyDebugComposite(ID3D11RenderTargetView* backbuffer)
 {
     if (backbuffer == nullptr)
     {
@@ -607,7 +705,7 @@ void PostProcess::uploadConstants(std::uint32_t texelWidth, std::uint32_t texelH
         static_cast<float>(postDebugMode_),
         0.0f,
         0.0f,
-        0.0f,
+        taaValid_ ? 1.0f : 0.0f,
     };
     constants.cameraNearFar = {postNear_, postFar_, 0.0f, 0.0f};
     constants.sun = {postSunDir_.x, postSunDir_.y, postSunDir_.z, postSunIntensity_};
@@ -634,6 +732,7 @@ void PostProcess::uploadConstants(std::uint32_t texelWidth, std::uint32_t texelH
     {
         constants.shadowViewProjection[cascade] = postShadowViewProj_[cascade];
     }
+    constants.previousViewProjection = postPrevViewProj_;
 
     context_->UpdateSubresource(constants_, 0u, nullptr, &constants, 0u, 0u);
     context_->VSSetConstantBuffers(0u, 1u, &constants_);
@@ -701,6 +800,11 @@ void PostProcess::releaseTargets()
     releaseTarget(bloomMip2_);
     releaseTarget(bloomAccum_);
     releaseTarget(bloomTemp_);
+    releaseTarget(blend_);
+    releaseTarget(taaHistory_);
+    releaseTarget(taaResult_);
+
+    taaValid_ = false;
 
     if (noiseView_)
     {
@@ -812,6 +916,14 @@ void PostProcess::createTargets(std::uint32_t width, std::uint32_t height)
     createTarget(sixteenth(width), sixteenth(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomMip2_);
     createTarget(eighth(width), eighth(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomAccum_);
     createTarget(sixteenth(width), sixteenth(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomTemp_);
+    createTarget(width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, blend_);
+    createTarget(width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, taaHistory_);
+    createTarget(width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, taaResult_);
+    if (taaHistory_.rtv != nullptr)
+    {
+        const float zeroColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        context_->ClearRenderTargetView(taaHistory_.rtv, zeroColor);
+    }
 
     for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
     {
@@ -1056,11 +1168,29 @@ void PostProcess::compileShaders()
     compile("bloom blur h", bloomBlurHShader_, shaders::postProcessPixelShader(shaders::kBloomBlurHBody));
     compile("bloom blur v", bloomBlurVShader_, shaders::postProcessPixelShader(shaders::kBloomBlurVBody));
     compile("bloom upsample", bloomUpsampleShader_, shaders::postProcessPixelShader(shaders::kBloomUpsampleBody));
+    compile("scene blend", sceneBlendShader_, shaders::postProcessPixelShader(shaders::kSceneBlendBody));
+    compile("taa", taaShader_, shaders::postProcessPixelShader(shaders::kTaaBody));
+    compile("final", finalShader_, shaders::postProcessPixelShader(shaders::kFinalBody));
     compile("composite", compositeShader_, shaders::postProcessPixelShader(shaders::kCompositeBody));
 }
 
 void PostProcess::releaseShaders()
 {
+    if (finalShader_)
+    {
+        finalShader_->Release();
+        finalShader_ = nullptr;
+    }
+    if (taaShader_)
+    {
+        taaShader_->Release();
+        taaShader_ = nullptr;
+    }
+    if (sceneBlendShader_)
+    {
+        sceneBlendShader_->Release();
+        sceneBlendShader_ = nullptr;
+    }
     if (compositeShader_)
     {
         compositeShader_->Release();

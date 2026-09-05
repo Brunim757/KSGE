@@ -131,6 +131,8 @@ private:
     std::uint32_t gridMesh_ = ~0u;
 
     DirectX::XMFLOAT4X4 shadowViewProjection_[kShadowCascades];
+    DirectX::XMFLOAT4X4 previousViewProjection_;
+    std::uint32_t frameIndex_ = 0u;
 
     ID3D11Query* disjointQuery_ = nullptr;
     ID3D11Query* timestampStart_ = nullptr;

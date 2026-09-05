@@ -19,6 +19,19 @@ namespace {
 constexpr UINT kZeroOffset = 0u;
 constexpr std::uint32_t kMaxInstancesPerBatch = 1024u;
 
+float haltonSequence(std::uint32_t base, std::uint32_t index)
+{
+    float result = 0.0f;
+    float fraction = 1.0f;
+    while (index > 0u)
+    {
+        fraction /= static_cast<float>(base);
+        result += fraction * static_cast<float>(index % base);
+        index /= base;
+    }
+    return result;
+}
+
 DirectX::XMFLOAT3 cameraPosition(flecs::world& world)
 {
     const flecs::entity camera = world.entity("editor_camera");
@@ -766,8 +779,25 @@ void Renderer::render()
 
     postProcess_.beginScene(device_.width(), device_.height());
 
+    const DirectX::XMMATRIX baseViewProjection = math::load(frame.viewProjection);
+    DirectX::XMMATRIX displayViewProjection = baseViewProjection;
+    if (debugMode_ == 0u)
+    {
+        const float jitterX = (haltonSequence(2u, frameIndex_) - 0.5f) * 2.0f /
+            static_cast<float>(device_.width());
+        const float jitterY = (haltonSequence(3u, frameIndex_) - 0.5f) * 2.0f /
+            static_cast<float>(device_.height());
+        const DirectX::XMMATRIX jitterMatrix = DirectX::XMMatrixSet(
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            jitterX, jitterY, 0.0f, 1.0f);
+        displayViewProjection = DirectX::XMMatrixMultiply(baseViewProjection, jitterMatrix);
+    }
+    ++frameIndex_;
+
     SceneConstants scene = {};
-    scene.viewProjection = frame.viewProjection;
+    math::store(scene.viewProjection, displayViewProjection);
     scene.camPosition = {camPosition.x, camPosition.y, camPosition.z, 1.0f};
     scene.sunDirection = {light.direction.x, light.direction.y, light.direction.z, 0.0f};
     scene.sunColor = {light.color.x, light.color.y, light.color.z, light.intensity};
@@ -788,11 +818,12 @@ void Renderer::render()
     PostFrameInfo info = {};
     info.width = device_.width();
     info.height = device_.height();
-    const DirectX::XMMATRIX viewProjection = math::load(frame.viewProjection);
-    math::store(info.viewProjection, viewProjection);
+    math::store(info.viewProjection, displayViewProjection);
     DirectX::XMVECTOR determinant = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-    const DirectX::XMMATRIX inverse = DirectX::XMMatrixInverse(&determinant, viewProjection);
+    const DirectX::XMMATRIX inverse = DirectX::XMMatrixInverse(&determinant, displayViewProjection);
     math::store(info.inverseViewProjection, inverse);
+    math::store(info.previousViewProjection, previousViewProjection_);
+    math::store(previousViewProjection_, displayViewProjection);
     info.cameraPosition = {camPosition.x, camPosition.y, camPosition.z};
     info.nearPlane = nearPlane;
     info.farPlane = farPlane;

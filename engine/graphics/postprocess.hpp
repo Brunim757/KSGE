@@ -24,6 +24,7 @@ struct PostFrameInfo
     std::uint32_t height = 0u;
     DirectX::XMFLOAT4X4 viewProjection;
     DirectX::XMFLOAT4X4 inverseViewProjection;
+    DirectX::XMFLOAT4X4 previousViewProjection;
     DirectX::XMFLOAT3 cameraPosition{0.0f, 0.0f, 0.0f};
     float nearPlane = 0.1f;
     float farPlane = 5000.0f;
@@ -102,7 +103,10 @@ private:
     void applySky();
     void applyFog();
     void applyBloom();
-    void applyComposite(ID3D11RenderTargetView* backbuffer);
+    void applySceneBlend();
+    void applyTaa();
+    void applyFinal(ID3D11RenderTargetView* backbuffer);
+    void applyDebugComposite(ID3D11RenderTargetView* backbuffer);
     void drawSceneFallback(ID3D11RenderTargetView* backbuffer);
     void clearTarget(ID3D11RenderTargetView* rtv, float r, float g, float b, float a);
 
@@ -123,6 +127,9 @@ private:
     Target ssr_;
     Target ssgi_;
     Target fog_;
+    Target blend_;
+    Target taaHistory_;
+    Target taaResult_;
     Target bloomBase_;
     Target bloomMip1_;
     Target bloomMip2_;
@@ -144,6 +151,9 @@ private:
     ID3D11PixelShader* bloomBlurHShader_ = nullptr;
     ID3D11PixelShader* bloomBlurVShader_ = nullptr;
     ID3D11PixelShader* bloomUpsampleShader_ = nullptr;
+    ID3D11PixelShader* sceneBlendShader_ = nullptr;
+    ID3D11PixelShader* taaShader_ = nullptr;
+    ID3D11PixelShader* finalShader_ = nullptr;
     ID3D11PixelShader* compositeShader_ = nullptr;
 
     ID3D11SamplerState* pointSampler_ = nullptr;
@@ -163,6 +173,9 @@ private:
 
     DirectX::XMFLOAT4X4 postViewProj_;
     DirectX::XMFLOAT4X4 postInvViewProj_;
+    DirectX::XMFLOAT4X4 postPrevViewProj_;
+    bool taaValid_ = false;
+    std::uint32_t lastDebugMode_ = 0xFFFFFFFFu;
     DirectX::XMFLOAT3 postCameraPos_{0.0f, 0.0f, 0.0f};
     float postNear_ = 0.1f;
     float postFar_ = 5000.0f;

@@ -209,36 +209,53 @@ struct GBufferOut
     float4 data : SV_Target2;
 };
 
-float2 gridLineAlpha(float2 gridCoord, float halfWidth)
+cbuffer SceneCB : register(b0)
 {
-    float2 lineDist = abs(frac(gridCoord) - 0.0);
-    lineDist = min(lineDist, 1.0 - lineDist);
-    return 1.0 - smoothstep(0.0, halfWidth * 2.0, lineDist);
+    row_major float4x4 gViewProj;
+    float4 gCamPos;
+    float4 gSunDir;
+    float4 gSunColor;
+    float4 gSkyTop;
+    float4 gSkyHorizon;
+};
+
+float edgeCoverage(float2 coord)
+{
+    float2 d = abs(frac(coord) - 0.0);
+    d = min(d, 1.0 - d);
+    float2 width = max(fwidth(coord) * 0.5, 0.0005);
+    float2 coverage = 1.0 - smoothstep(0.0, width, d);
+    return max(coverage.x, coverage.y);
 }
 
 GBufferOut main(VSOut input)
 {
     float2 gridCoord = input.world.xz;
-    float halfWidth = max(fwidth(gridCoord.x), fwidth(gridCoord.y)) * 0.5;
-    float2 lineAlpha = gridLineAlpha(gridCoord, halfWidth);
-    float alpha = max(lineAlpha.x, lineAlpha.y);
-    if (alpha <= 0.005)
+    float minorCoverage = edgeCoverage(gridCoord);
+    float majorCoverage = edgeCoverage(gridCoord / 10.0);
+    float originCoverage = edgeCoverage(gridCoord / 4.0);
+
+    float distanceToCamera = length(input.world.xyz - gCamPos.xyz);
+    float distanceFade = 1.0 - smoothstep(30.0, 120.0, distanceToCamera);
+    float minorVisibility = max(minorCoverage * (1.0 - majorCoverage), 0.0) * distanceFade;
+    float majorVisibility = majorCoverage * distanceFade;
+    float originVisibility = originCoverage * distanceFade;
+
+    float visibility = max(max(minorVisibility, majorVisibility), originVisibility);
+    if (visibility <= 0.004)
     {
         discard;
     }
 
-    float2 majorCoord = gridCoord / 5.0;
-    float2 majorAlpha = gridLineAlpha(majorCoord, halfWidth / 5.0);
-    float majorLine = max(majorAlpha.x, majorAlpha.y);
-
-    float originDistance = min(abs(gridCoord.x), abs(gridCoord.y));
-    float originGlow = 1.0 - smoothstep(0.0, 4.0, originDistance);
-
-    float3 lineColor = lerp(float3(0.30, 0.33, 0.38), float3(0.55, 0.60, 0.70), majorLine);
-    lineColor = lerp(lineColor, float3(0.90, 0.95, 1.00), originGlow * 0.7);
+    float3 minorColor = float3(0.42, 0.46, 0.52);
+    float3 majorColor = float3(0.72, 0.78, 0.86);
+    float3 originColor = float3(0.95, 0.97, 1.0);
+    float3 lineColor = minorColor;
+    lineColor = lerp(lineColor, majorColor, saturate(majorVisibility / max(visibility, 1e-4)));
+    lineColor = lerp(lineColor, originColor, saturate(originVisibility / max(visibility, 1e-4)));
 
     GBufferOut output;
-    output.color = float4(lineColor, 0.0);
+    output.color = float4(lineColor * min(visibility * 2.0, 1.0), 0.0);
     output.normal = float4(0.5, 1.0, 0.5, 1.0);
     output.data = float4(0.0, 0.0, 0.0, 1.0);
     return output;
@@ -296,6 +313,7 @@ cbuffer PostCB : register(b0)
     float4 gShadowParams;
     float4 gCompositeParams;
     row_major float4x4 gShadowViewProj[3];
+    row_major float4x4 gPrevViewProj;
 };
 
 float3 reconstructWorld(float2 uv, float depth)
@@ -993,6 +1011,102 @@ float4 main(VSOut input) : SV_Target
     color += bloom * gBloomParams.z;
     color = acesToneMap(color);
     color = gLut.Sample(gLinearSampler, saturate(color)).xyz;
+    color = pow(color, 1.0 / 2.2);
+    return float4(color, 1.0);
+}
+)";
+
+inline constexpr const char* kSceneBlendBody = R"(
+Texture2D gScene : register(t0);
+Texture2D gSsr : register(t1);
+Texture2D gSsgi : register(t2);
+Texture2D gFog : register(t3);
+Texture2D gBloomBase : register(t4);
+Texture2D gBloomAccum : register(t5);
+SamplerState gLinearSampler : register(s1);
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 scene = gScene.Sample(gLinearSampler, input.uv).rgb;
+    float3 color = scene;
+    color += gSsgi.Sample(gLinearSampler, input.uv).rgb * gCompositeParams.x;
+    color += gSsr.Sample(gLinearSampler, input.uv).rgb * gCompositeParams.y;
+    float4 fog = gFog.Sample(gLinearSampler, input.uv);
+    color = color * (1.0 - (1.0 - fog.a) * gCompositeParams.z) + fog.rgb * gCompositeParams.z;
+    color += (gBloomBase.Sample(gLinearSampler, input.uv).rgb +
+              gBloomAccum.Sample(gLinearSampler, input.uv).rgb) * gBloomParams.z;
+    return float4(color, 1.0);
+}
+)";
+
+inline constexpr const char* kTaaBody = R"(
+Texture2D gInput : register(t0);
+Texture2D gHistory : register(t1);
+Texture2D gDepth : register(t2);
+SamplerState gPointSampler : register(s0);
+SamplerState gLinearSampler : register(s1);
+
+float3 taaClamp(float2 uv, Texture2D source, float2 texel)
+{
+    float3 center = source.Sample(gLinearSampler, uv).rgb;
+    float3 minColor = center;
+    float3 maxColor = center;
+    [unroll]
+    for (int y = -1; y <= 1; ++y)
+    {
+        [unroll]
+        for (int x = -1; x <= 1; ++x)
+        {
+            if (x == 0 && y == 0)
+            {
+                continue;
+            }
+            float3 sampleColor = source.Sample(gLinearSampler, uv + float2(float(x), float(y)) * texel).rgb;
+            minColor = min(minColor, sampleColor);
+            maxColor = max(maxColor, sampleColor);
+        }
+    }
+    return (minColor + maxColor) * 0.5;
+}
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 current = gInput.Sample(gLinearSampler, input.uv).rgb;
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+
+    float3 worldPos = reconstructWorld(input.uv, depth);
+    float4 previousClip = mul(float4(worldPos, 1.0), gPrevViewProj);
+    float2 previousUv = previousClip.xy / max(previousClip.w, 1e-5) * 0.5 + 0.5;
+    previousUv.y = 1.0 - previousUv.y;
+
+    float2 texel = gTargetSize.zw;
+    float3 clamped = taaClamp(input.uv, gInput, texel);
+    float3 result = current;
+    if (previousClip.w > 0.0 && previousUv.x > 0.0 && previousUv.x < 1.0 &&
+        previousUv.y > 0.0 && previousUv.y < 1.0)
+    {
+        float3 history = gHistory.Sample(gLinearSampler, previousUv).rgb;
+        float3 limited = clamp(history, min(clamped, current), max(clamped, current));
+        result = lerp(limited, current, 0.08);
+    }
+    return float4(result, 1.0);
+}
+)";
+
+inline constexpr const char* kFinalBody = R"(
+Texture2D gResult : register(t0);
+Texture3D gLut : register(t1);
+SamplerState gLinearSampler : register(s1);
+
+float3 acesToneMap(float3 color)
+{
+    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
+}
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 color = acesToneMap(gResult.Sample(gLinearSampler, input.uv).rgb);
+    color = gLut.Sample(gLinearSampler, saturate(color)).rgb;
     color = pow(color, 1.0 / 2.2);
     return float4(color, 1.0);
 }
