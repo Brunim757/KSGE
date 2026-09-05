@@ -189,12 +189,13 @@ int main(int argc, char** argv)
             device.readAverageLuminance(luminance);
             std::printf(
                 "KSGE selftest frame %d mode %u luminance %.4f cpu %.2fms gpu %.2fms "
-                "draws %u(gb %u sh %u) instances %u(gb %u sh %u)\n",
+                "entities %u draws %u(gb %u sh %u) instances %u(gb %u sh %u)\n",
                 frameCount,
                 static_cast<unsigned>(mode),
                 luminance,
                 renderer.frameCpuMs(),
                 renderer.frameGpuMs(),
+                static_cast<unsigned>(world.handle().count()),
                 renderer.frameDraws(),
                 renderer.gbufferDraws(),
                 renderer.shadowDraws(),
