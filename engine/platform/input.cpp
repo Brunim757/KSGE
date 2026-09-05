@@ -50,6 +50,13 @@ void Input::capture(Window& window)
     double cursorY = 0.0;
     glfwGetCursorPos(handle, &cursorX, &cursorY);
 
+    if (!initialized_)
+    {
+        previousCursorX_ = cursorX;
+        previousCursorY_ = cursorY;
+        initialized_ = true;
+    }
+
     snapshot_.mouseDX = static_cast<float>(cursorX - previousCursorX_);
     snapshot_.mouseDY = static_cast<float>(cursorY - previousCursorY_);
     previousCursorX_ = cursorX;

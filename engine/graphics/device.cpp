@@ -102,9 +102,18 @@ void GraphicsDevice::resize(std::int32_t width, std::int32_t height)
     {
         return;
     }
+    if (width <= 0 || height <= 0)
+    {
+        return;
+    }
     releaseRenderTargets();
-    swapChain_->ResizeBuffers(
-        2, static_cast<UINT>(width), static_cast<UINT>(height), DXGI_FORMAT_R8G8B8A8_UNORM, 0u);
+    const HRESULT result = swapChain_->ResizeBuffers(
+        2u, static_cast<UINT>(width), static_cast<UINT>(height), DXGI_FORMAT_R8G8B8A8_UNORM, 0u);
+    if (FAILED(result))
+    {
+        recreate();
+        return;
+    }
     width_ = width;
     height_ = height;
     createRenderTargets();
@@ -250,8 +259,15 @@ void GraphicsDevice::createLegacySwapchain()
 void GraphicsDevice::createRenderTargets()
 {
     ID3D11Texture2D* backBuffer = nullptr;
-    swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
-    device_->CreateRenderTargetView(backBuffer, nullptr, &renderTargetView_);
+    if (FAILED(swapChain_->GetBuffer(0, IID_PPV_ARGS(&backBuffer))))
+    {
+        return;
+    }
+    if (FAILED(device_->CreateRenderTargetView(backBuffer, nullptr, &renderTargetView_)))
+    {
+        backBuffer->Release();
+        return;
+    }
     backBuffer->Release();
 
     D3D11_TEXTURE2D_DESC depthDesc = {};
@@ -264,7 +280,10 @@ void GraphicsDevice::createRenderTargets()
     depthDesc.Usage = D3D11_USAGE_DEFAULT;
     depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
 
-    device_->CreateTexture2D(&depthDesc, nullptr, &depthStencil_);
+    if (FAILED(device_->CreateTexture2D(&depthDesc, nullptr, &depthStencil_)))
+    {
+        return;
+    }
     device_->CreateDepthStencilView(depthStencil_, nullptr, &depthStencilView_);
 }
 

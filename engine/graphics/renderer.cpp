@@ -85,7 +85,7 @@ Renderer::Renderer(GraphicsDevice& device, flecs::world& world)
     createPipeline();
     createStates();
     createDefaultTextures();
-    skyMesh_ = uploadMesh(makeCube(1.0f));
+    skyMesh_ = uploadMesh(makeCube(12000.0f));
 }
 
 Renderer::~Renderer()
@@ -475,10 +475,22 @@ void Renderer::drawMesh(
     context_->PSSetConstantBuffers(1u, 1u, &objectBuffer_);
 
     ID3D11ShaderResourceView* srvs[5] = {
-        material.baseColorTexture >= 0 ? textures_[static_cast<std::size_t>(material.baseColorTexture)].srv : defaultBaseSrv_,
-        material.metallicRoughnessTexture >= 0 ? textures_[static_cast<std::size_t>(material.metallicRoughnessTexture)].srv : defaultMrSrv_,
-        material.normalTexture >= 0 ? textures_[static_cast<std::size_t>(material.normalTexture)].srv : defaultNormalSrv_,
-        material.occlusionTexture >= 0 ? textures_[static_cast<std::size_t>(material.occlusionTexture)].srv : defaultBaseSrv_,
+        material.baseColorTexture >= 0 &&
+                static_cast<std::uint32_t>(material.baseColorTexture) < textures_.size()
+            ? textures_[static_cast<std::size_t>(material.baseColorTexture)].srv
+            : defaultBaseSrv_,
+        material.metallicRoughnessTexture >= 0 &&
+                static_cast<std::uint32_t>(material.metallicRoughnessTexture) < textures_.size()
+            ? textures_[static_cast<std::size_t>(material.metallicRoughnessTexture)].srv
+            : defaultMrSrv_,
+        material.normalTexture >= 0 &&
+                static_cast<std::uint32_t>(material.normalTexture) < textures_.size()
+            ? textures_[static_cast<std::size_t>(material.normalTexture)].srv
+            : defaultNormalSrv_,
+        material.occlusionTexture >= 0 &&
+                static_cast<std::uint32_t>(material.occlusionTexture) < textures_.size()
+            ? textures_[static_cast<std::size_t>(material.occlusionTexture)].srv
+            : defaultBaseSrv_,
         defaultEmissiveSrv_,
     };
     context_->PSSetShaderResources(0u, 5u, srvs);

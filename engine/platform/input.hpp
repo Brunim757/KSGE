@@ -60,6 +60,7 @@ private:
     InputSnapshot snapshot_;
     double previousCursorX_ = 0.0;
     double previousCursorY_ = 0.0;
+    bool initialized_ = false;
 };
 
 }
