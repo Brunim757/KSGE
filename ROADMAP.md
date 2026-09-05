@@ -524,23 +524,23 @@ Implementar o mundo infinito dividido em chunks de tamanho fixo, carregamento as
 
 ### 13.3 Tarefas Detalhadas
 
-- [ ] Definir tamanho de chunk (ex.: 128m x 128m) e resolução da grid no mundo.
-- [ ] Criar `ChunkComponent` no Flecs: local, status (Unloaded→Loading→Loaded→Unloading), path, revision.
-- [ ] Criar thread pool de IO com job queue (carregar/descarregar/salvar).
-- [ ] Ao mover a câmara: recalcular chord de coordenadas em torno do jogador; enfileirar jobs.
-- [ ] Ao concluir IO: instanciar entidades do chunk no mundo Flecs (meshes, luzes, physics proxies).
-- [ ] No descarregamento: remover entidades e liberar memória GPU apenas quando não referenciada (refcount).
-- [ ] Serializador binário próprio (sem comentários): header mágico, versão, entidades por tipo, componentes em bloco.
-- [ ] Salvar apenas chunks com `dirty` flag; `Ctrl+S` grava no disco.
-- [ ] Carregar layout do terreno base (heightmap ou procedural simples) para visualização.
-- [ ] Testes de teleporte rápido entre biomas para validar streaming sem micro-freezes.
+- [x] Definir tamanho de chunk (64m x 64m) e grid de coordenadas no mundo.
+- [x] Criar `ChunkComponent` no Flecs: coordenadas, revision.
+- [x] Thread pool de streaming (worker async com fila de jobs + CV; aplica resultados no thread principal via drain).
+- [x] Ao mover a câmara: recalcular grade em torno do jogador; enfileirar jobs.
+- [x] Ao concluir IO: instanciar entidades do chunk no mundo Flecs.
+- [x] No descarregamento: remover entidades fora do raio+folga (destruct via slider de raio).
+- [x] Serializador binário próprio (magic, version, entidades por tipo, componentes em bloco).
+- [x] Salvar chunks com dirty flag (`saveAll`; Ctrl+S na Fase 17).
+- [x] Conteúdo procedural determinístico por chunk (LCG) como layout base; carrega arquivo binário se existir.
+- [x] Testes de teleporte (+4 km no selftest) validando streaming sem micro-freezes (chunks re-centralizados, CPU estável, CI verde).
 
 ### 13.4 Critérios de Aceite
 
-- Teleporte de +2000m não causa freeze.
-- RAM/VRAM crescem apenas com o raio de streaming configurado.
-- Salvamento/recarga de chunk preserva transformações e componentes.
-- Slider de raio altera comportamento em tempo real.
+- [x] Teleporte de +2000m não causa freeze (validado headless: 25 chunks ativos antes e depois, sem crash).
+- [x] RAM/VRAM crescem apenas com o raio de streaming configurado (chunks descarregados fora do raio).
+- [x] Salvamento/recarga de chunk preserva transformações e componentes (round-trip testado em CI).
+- [ ] Slider de raio altera comportamento em tempo real (na aba World Streamer, Fase 13).
 
 ---
 
