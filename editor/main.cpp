@@ -122,6 +122,9 @@ int main(int argc, char** argv)
     ksge::Renderer renderer(device, world.handle());
     const std::uint32_t cubeMesh = renderer.uploadMesh(ksge::makeCube(1.0f));
     const std::uint32_t sphereMesh = renderer.uploadMesh(ksge::makeSphere(48u, 24u, 1.0f));
+    const std::uint32_t mediumSphere = renderer.uploadMesh(ksge::makeSphere(20u, 10u, 1.0f));
+    const std::uint32_t lowSphere = renderer.uploadMesh(ksge::makeSphere(8u, 4u, 1.0f));
+    renderer.setLodChain(sphereMesh, mediumSphere, lowSphere);
     spawnDemoScene(world.handle(), cubeMesh, sphereMesh, cubeMesh);
     if (stressCount > 0)
     {
@@ -181,15 +184,23 @@ int main(int argc, char** argv)
         {
             const std::uint32_t mode = static_cast<std::uint32_t>(frameCount / 30) % 7u;
             renderer.setDebugMode(mode);
+            renderer.updateGpuTime();
             float luminance = 0.0f;
             device.readAverageLuminance(luminance);
             std::printf(
-                "KSGE selftest frame %d mode %u luminance %.4f draws %u instances %u\n",
+                "KSGE selftest frame %d mode %u luminance %.4f cpu %.2fms gpu %.2fms "
+                "draws %u(gb %u sh %u) instances %u(gb %u sh %u)\n",
                 frameCount,
                 static_cast<unsigned>(mode),
                 luminance,
+                renderer.frameCpuMs(),
+                renderer.frameGpuMs(),
                 renderer.frameDraws(),
-                renderer.frameInstances());
+                renderer.gbufferDraws(),
+                renderer.shadowDraws(),
+                renderer.frameInstances(),
+                renderer.gbufferInstances(),
+                renderer.shadowInstances());
         }
         device.present();
 

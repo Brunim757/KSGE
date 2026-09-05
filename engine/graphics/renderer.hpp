@@ -2,6 +2,7 @@
 
 #include <d3d11.h>
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -57,8 +58,20 @@ public:
 
     void setDebugMode(std::uint32_t mode);
 
+    void setLodChain(
+        std::uint32_t meshIndex,
+        std::uint32_t mediumMesh,
+        std::uint32_t lowMesh);
+    void updateGpuTime();
+
     std::uint32_t frameDraws() const;
     std::uint32_t frameInstances() const;
+    std::uint32_t gbufferDraws() const;
+    std::uint32_t gbufferInstances() const;
+    std::uint32_t shadowDraws() const;
+    std::uint32_t shadowInstances() const;
+    float frameCpuMs() const;
+    float frameGpuMs() const;
 
 private:
     void createPipeline();
@@ -111,12 +124,23 @@ private:
     std::vector<DrawEntry> gbufferEntries_;
     std::vector<DrawEntry> shadowEntries_;
     std::vector<DirectX::XMFLOAT4X4> instancedMatrices_;
+    std::vector<std::array<std::uint32_t, 3u>> lodChains_;
     std::uint32_t gridMesh_ = ~0u;
 
     DirectX::XMFLOAT4X4 shadowViewProjection_[kShadowCascades];
 
+    ID3D11Query* disjointQuery_ = nullptr;
+    ID3D11Query* timestampStart_ = nullptr;
+    ID3D11Query* timestampEnd_ = nullptr;
+
     std::uint32_t frameDraws_ = 0u;
     std::uint32_t frameInstances_ = 0u;
+    std::uint32_t gbufferDraws_ = 0u;
+    std::uint32_t gbufferInstances_ = 0u;
+    std::uint32_t shadowDraws_ = 0u;
+    std::uint32_t shadowInstances_ = 0u;
+    float frameCpuMs_ = 0.0f;
+    float frameGpuMs_ = 0.0f;
 
     PostProcess postProcess_;
     std::uint32_t debugMode_ = 0u;

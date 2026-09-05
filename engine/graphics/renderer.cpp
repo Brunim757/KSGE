@@ -6,6 +6,7 @@
 #include "engine/shaders/shaders_storage.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 #include <d3d11.h>
@@ -121,6 +122,15 @@ Renderer::Renderer(GraphicsDevice& device, flecs::world& world)
 
     instancedMatrices_.resize(kMaxInstancesPerBatch);
     gridMesh_ = uploadMesh(makeQuad(40.0f, 40.0f));
+
+    D3D11_QUERY_DESC disjointDesc = {};
+    disjointDesc.Query = D3D11_QUERY_TIMESTAMP_DISJOINT;
+    d3d_->CreateQuery(&disjointDesc, &disjointQuery_);
+
+    D3D11_QUERY_DESC timestampDesc = {};
+    timestampDesc.Query = D3D11_QUERY_TIMESTAMP;
+    d3d_->CreateQuery(&timestampDesc, &timestampStart_);
+    d3d_->CreateQuery(&timestampDesc, &timestampEnd_);
 }
 
 Renderer::~Renderer()
@@ -146,6 +156,18 @@ Renderer::~Renderer()
         {
             texture.texture->Release();
         }
+    }
+    if (timestampEnd_)
+    {
+        timestampEnd_->Release();
+    }
+    if (timestampStart_)
+    {
+        timestampStart_->Release();
+    }
+    if (disjointQuery_)
+    {
+        disjointQuery_->Release();
     }
     if (instanceView_)
     {
@@ -470,6 +492,8 @@ void Renderer::buildEntries(const Frustum& frustum)
     gbufferEntries_.clear();
     shadowEntries_.clear();
 
+    const DirectX::XMVECTOR camera = DirectX::XMLoadFloat3(&cameraPosition(world_));
+
     world_.each([&](Transform& transform, MeshRenderer& meshRenderer, PbrMaterial& material)
     {
         if (meshRenderer.meshAsset >= meshes_.size())
@@ -485,10 +509,22 @@ void Renderer::buildEntries(const Frustum& frustum)
             DirectX::XMVectorAdd(localMin, localMax), DirectX::XMVectorReplicate(0.5f));
         const DirectX::XMVECTOR halfExtents = DirectX::XMVectorMultiply(
             DirectX::XMVectorSubtract(localMax, localMin), DirectX::XMVectorReplicate(0.5f));
-        const DirectX::XMVECTOR worldCenter = DirectX::XMVector3TransformCoord(localCenter, world);
+        const DirectX::XMVECTOR worldPosition = DirectX::XMVector3TransformCoord(localCenter, world);
+
+        std::uint32_t drawMesh = meshRenderer.meshAsset;
+        if (!lodChains_.empty() && meshRenderer.meshAsset < lodChains_.size())
+        {
+            const DirectX::XMVECTOR distanceVector = DirectX::XMVectorSubtract(worldPosition, camera);
+            const float distance = DirectX::XMVectorGetX(DirectX::XMVector3LengthEst(distanceVector));
+            const std::uint32_t lod = distance > 160.0f ? 2u : (distance > 80.0f ? 1u : 0u);
+            if (lod > 0u)
+            {
+                drawMesh = lodChains_[meshRenderer.meshAsset][lod];
+            }
+        }
 
         math::Vec3 center;
-        DirectX::XMStoreFloat3(&center, worldCenter);
+        DirectX::XMStoreFloat3(&center, worldPosition);
         const math::Vec3 boundsHalf = {
             DirectX::XMVectorGetX(halfExtents),
             DirectX::XMVectorGetY(halfExtents),
@@ -498,16 +534,16 @@ void Renderer::buildEntries(const Frustum& frustum)
         if (ksge::intersects(frustum, center, boundsHalf))
         {
             DrawEntry entry;
-            entry.meshIndex = meshRenderer.meshAsset;
-            entry.key = makeInstanceKey(material, meshRenderer.meshAsset);
+            entry.meshIndex = drawMesh;
+            entry.key = makeInstanceKey(material, drawMesh);
             entry.material = &material;
             math::store(entry.world, world);
             gbufferEntries_.push_back(entry);
         }
 
         DrawEntry shadowEntry;
-        shadowEntry.meshIndex = meshRenderer.meshAsset;
-        shadowEntry.key = meshRenderer.meshAsset;
+        shadowEntry.meshIndex = drawMesh;
+        shadowEntry.key = drawMesh;
         shadowEntry.material = nullptr;
         math::store(shadowEntry.world, world);
         shadowEntries_.push_back(shadowEntry);
@@ -601,6 +637,16 @@ void Renderer::drawObjectBatchRange(
             context_->DrawIndexedInstanced(mesh.indexCount, instanceCount, 0u, 0, 0);
             ++frameDraws_;
             frameInstances_ += instanceCount;
+            if (shadow)
+            {
+                ++shadowDraws_;
+                shadowInstances_ += instanceCount;
+            }
+            else
+            {
+                ++gbufferDraws_;
+                gbufferInstances_ += instanceCount;
+            }
             base += instanceCount;
         }
 
@@ -656,6 +702,7 @@ void Renderer::drawGrid()
 
 void Renderer::render()
 {
+    const auto frameStart = std::chrono::steady_clock::now();
     d3d_ = device_.device();
     context_ = device_.context();
     if (gbufferVertexShader_ == nullptr || gbufferPixelShader_ == nullptr)
@@ -665,6 +712,15 @@ void Renderer::render()
     postProcess_.attach(d3d_, context_);
     frameDraws_ = 0u;
     frameInstances_ = 0u;
+    gbufferDraws_ = 0u;
+    gbufferInstances_ = 0u;
+    shadowDraws_ = 0u;
+    shadowInstances_ = 0u;
+
+    if (disjointQuery_)
+    {
+        context_->Begin(disjointQuery_);
+    }
 
     const CameraFrame& frame = world_.get<CameraFrame>();
     const DirectionalLight& light = world_.get<DirectionalLight>();
@@ -682,6 +738,11 @@ void Renderer::render()
     Frustum frustum;
     extractFrustum(frame, frustum);
     buildEntries(frustum);
+
+    if (timestampStart_)
+    {
+        context_->End(timestampStart_);
+    }
 
     for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
     {
@@ -745,6 +806,49 @@ void Renderer::render()
     info.debugMode = debugMode_;
 
     postProcess_.run(info, device_.renderTarget());
+
+    if (disjointQuery_ && timestampStart_ && timestampEnd_)
+    {
+        context_->End(timestampEnd_);
+        context_->End(disjointQuery_);
+    }
+
+    const auto frameEnd = std::chrono::steady_clock::now();
+    frameCpuMs_ = std::chrono::duration<float, std::milli>(frameEnd - frameStart).count();
+}
+
+void Renderer::updateGpuTime()
+{
+    if (disjointQuery_ == nullptr || timestampStart_ == nullptr || timestampEnd_ == nullptr)
+    {
+        return;
+    }
+    context_->Flush();
+    D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjoint = {};
+    if (context_->GetData(disjointQuery_, &disjoint, sizeof(disjoint), 0u) != S_OK ||
+        disjoint.Disjoint)
+    {
+        return;
+    }
+    std::uint64_t startTicks = 0u;
+    std::uint64_t endTicks = 0u;
+    if (context_->GetData(timestampStart_, &startTicks, sizeof(startTicks), 0u) != S_OK ||
+        context_->GetData(timestampEnd_, &endTicks, sizeof(endTicks), 0u) != S_OK)
+    {
+        return;
+    }
+    const double frequency = static_cast<double>(disjoint.Frequency);
+    frameGpuMs_ = static_cast<float>((static_cast<double>(endTicks - startTicks) / frequency) * 1000.0);
+}
+
+void Renderer::setLodChain(std::uint32_t meshIndex, std::uint32_t mediumMesh, std::uint32_t lowMesh)
+{
+    if (meshIndex >= meshes_.size() || mediumMesh >= meshes_.size() || lowMesh >= meshes_.size())
+    {
+        return;
+    }
+    lodChains_.resize(meshes_.size());
+    lodChains_[meshIndex] = {meshIndex, mediumMesh, lowMesh};
 }
 
 void Renderer::setDebugMode(std::uint32_t mode)
@@ -760,6 +864,36 @@ std::uint32_t Renderer::frameDraws() const
 std::uint32_t Renderer::frameInstances() const
 {
     return frameInstances_;
+}
+
+std::uint32_t Renderer::gbufferDraws() const
+{
+    return gbufferDraws_;
+}
+
+std::uint32_t Renderer::gbufferInstances() const
+{
+    return gbufferInstances_;
+}
+
+std::uint32_t Renderer::shadowDraws() const
+{
+    return shadowDraws_;
+}
+
+std::uint32_t Renderer::shadowInstances() const
+{
+    return shadowInstances_;
+}
+
+float Renderer::frameCpuMs() const
+{
+    return frameCpuMs_;
+}
+
+float Renderer::frameGpuMs() const
+{
+    return frameGpuMs_;
 }
 
 }
