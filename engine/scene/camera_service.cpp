@@ -52,7 +52,7 @@ void CameraService::update(const InputSnapshot& input)
     Transform& transform = camera_.get_mut<Transform>();
     Camera& camera = camera_.get_mut<Camera>();
 
-    const bool lookEnabled = (input.mouseButtons & (1u | 2u)) != 0u;
+    const bool lookEnabled = (input.mouseButtons & 2u) != 0u;
     if (lookEnabled)
     {
         camera.yaw += input.mouseDX * kLookSpeed;
