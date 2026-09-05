@@ -265,16 +265,15 @@ void Renderer::createStates()
     samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
     d3d_->CreateSamplerState(&samplerDesc, &linearSampler_);
 
-     D3D11_RASTERIZER_DESC solidDesc = {};
+D3D11_RASTERIZER_DESC solidDesc = {};
     solidDesc.FillMode = D3D11_FILL_SOLID;
-    solidDesc.CullMode = D3D11_CULL_BACK;
-    solidDesc.FrontCounterClockwise = FALSE;
+    solidDesc.CullMode = D3D11_CULL_NONE;
+    solidDesc.FrontCounterClockwise = TRUE;
     solidDesc.DepthClipEnable = TRUE;
     solidDesc.MultisampleEnable = TRUE;
     d3d_->CreateRasterizerState(&solidDesc, &solidState_);
 
-     D3D11_RASTERIZER_DESC doubleSidedDesc = solidDesc;
-    doubleSidedDesc.CullMode = D3D11_CULL_NONE;
+    const D3D11_RASTERIZER_DESC doubleSidedDesc = solidDesc;
     d3d_->CreateRasterizerState(&doubleSidedDesc, &doubleSidedState_);
 
      D3D11_DEPTH_STENCIL_DESC depthDesc = {};

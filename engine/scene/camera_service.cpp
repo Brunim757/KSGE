@@ -52,7 +52,7 @@ void CameraService::update(const InputSnapshot& input)
     Transform& transform = camera_.get_mut<Transform>();
     Camera& camera = camera_.get_mut<Camera>();
 
-    const bool lookEnabled = (input.mouseButtons & 2u) != 0u;
+    const bool lookEnabled = (input.mouseButtons & (1u | 2u)) != 0u;
     if (lookEnabled)
     {
         camera.yaw += input.mouseDX * kLookSpeed;
@@ -78,23 +78,27 @@ void CameraService::update(const InputSnapshot& input)
     const float step = kMoveSpeed * deltaSeconds;
     if (isPressed(input, KeyW))
     {
-        transform.position.x += horizontal.x * step;
-        transform.position.z += horizontal.z * step;
+        transform.position.x += forward.x * step;
+        transform.position.y += forward.y * step;
+        transform.position.z += forward.z * step;
     }
     if (isPressed(input, KeyS))
     {
-        transform.position.x -= horizontal.x * step;
-        transform.position.z -= horizontal.z * step;
+        transform.position.x -= forward.x * step;
+        transform.position.y -= forward.y * step;
+        transform.position.z -= forward.z * step;
     }
     if (isPressed(input, KeyD))
     {
-        transform.position.x += right.x * step;
-        transform.position.z += right.z * step;
+        transform.position.x -= right.x * step;
+        transform.position.y -= right.y * step;
+        transform.position.z -= right.z * step;
     }
     if (isPressed(input, KeyA))
     {
-        transform.position.x -= right.x * step;
-        transform.position.z -= right.z * step;
+        transform.position.x += right.x * step;
+        transform.position.y += right.y * step;
+        transform.position.z += right.z * step;
     }
     if (isPressed(input, KeySpace))
     {
