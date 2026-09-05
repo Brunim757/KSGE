@@ -25,6 +25,13 @@ enum KeyCode : std::uint32_t
     KeyLeftShift,
     KeyEscape,
     KeyDelete,
+    KeyDigit0,
+    KeyDigit1,
+    KeyDigit2,
+    KeyDigit3,
+    KeyDigit4,
+    KeyDigit5,
+    KeyDigit6,
     KeyCount
 };
 

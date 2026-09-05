@@ -24,6 +24,7 @@ add_library(ksge_engine STATIC
     engine/core/world.cpp
     engine/graphics/device.cpp
     engine/graphics/mesh_upload.cpp
+    engine/graphics/postprocess.cpp
     engine/graphics/renderer.cpp
     engine/graphics/shader_compiler.cpp
     engine/platform/input.cpp

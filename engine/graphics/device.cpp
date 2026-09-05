@@ -71,6 +71,21 @@ ID3D11DeviceContext* GraphicsDevice::context() const
     return context_;
 }
 
+ID3D11RenderTargetView* GraphicsDevice::renderTarget() const
+{
+    return renderTargetView_;
+}
+
+std::int32_t GraphicsDevice::width() const
+{
+    return width_;
+}
+
+std::int32_t GraphicsDevice::height() const
+{
+    return height_;
+}
+
 void GraphicsDevice::beginFrame(const float clearColor[4])
 {
     context_->OMSetRenderTargets(1, &renderTargetView_, depthStencilView_);

@@ -1,12 +1,15 @@
 #include "tests/graphics_tests.hpp"
 
 #include "engine/graphics/mesh_upload.hpp"
+#include "engine/graphics/postprocess.hpp"
 #include "engine/graphics/shader_compiler.hpp"
 #include "engine/shaders/shaders_storage.hpp"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 namespace {
 
@@ -63,6 +66,110 @@ void testShaderSourcesCompile()
         bytecode->Release();
         bytecode = nullptr;
     }
+}
+
+void testPostProcessShadersCompile()
+{
+    ID3DBlob* bytecode = nullptr;
+    std::string error;
+
+    CHECK(ksge::compileShaderSource(ksge::shaders::kPostVertex, "main", "vs_5_0", bytecode, error));
+    if (bytecode)
+    {
+        bytecode->Release();
+        bytecode = nullptr;
+    }
+
+    const char* bodies[] = {
+        ksge::shaders::kSsaoBody,
+        ksge::shaders::kSsaoBlurHBody,
+        ksge::shaders::kSsaoBlurVBody,
+        ksge::shaders::kFogBody,
+        ksge::shaders::kBloomExtractBody,
+        ksge::shaders::kBloomDownsampleBody,
+        ksge::shaders::kBloomBlurHBody,
+        ksge::shaders::kBloomBlurVBody,
+        ksge::shaders::kBloomUpsampleBody,
+        ksge::shaders::kCompositeBody,
+    };
+    for (const char* body : bodies)
+    {
+        CHECK(ksge::compileShaderSource(
+            ksge::shaders::postProcessPixelShader(body), "main", "ps_5_0", bytecode, error));
+        if (bytecode)
+        {
+            bytecode->Release();
+            bytecode = nullptr;
+        }
+    }
+}
+
+void checkLutChannel(
+    const std::vector<float>& lut,
+    std::uint32_t size,
+    std::uint32_t r,
+    std::uint32_t g,
+    std::uint32_t b,
+    float expected,
+    float tolerance,
+    const char* what)
+{
+    const std::size_t pixel =
+        (static_cast<std::size_t>(b) * size + g) * size + r;
+    const float actual = lut[pixel * 4u];
+    if (actual < expected - tolerance || actual > expected + tolerance)
+    {
+        std::printf("FAIL: %s (actual=%.5f expected=%.5f)\n", what, actual, expected);
+        ++failures;
+    }
+}
+
+void testGradingLutIdentity()
+{
+    constexpr std::uint32_t size = 33u;
+    std::vector<float> lut(static_cast<std::size_t>(size) * size * size * 4u);
+    ksge::GradingParams params = {};
+    params.exposure = 1.0f;
+    params.contrast = 1.0f;
+    params.saturation = 1.0f;
+    ksge::generateGradingLut(lut.data(), size, params);
+
+    checkLutChannel(lut, size, 8u, 16u, 17u, 8.0f / 32.0f, 1.0e-4f, "lut identity r");
+    checkLutChannel(lut, size, 8u, 16u, 17u, 16.0f / 32.0f, 1.0e-4f, "lut identity g");
+    checkLutChannel(lut, size, 8u, 16u, 17u, 17.0f / 32.0f, 1.0e-4f, "lut identity b");
+}
+
+void testGradingLutContrast()
+{
+    constexpr std::uint32_t size = 33u;
+    std::vector<float> lut(static_cast<std::size_t>(size) * size * size * 4u);
+    ksge::GradingParams params = {};
+    params.exposure = 1.0f;
+    params.contrast = 2.0f;
+    params.saturation = 1.0f;
+    ksge::generateGradingLut(lut.data(), size, params);
+
+    checkLutChannel(lut, size, 8u, 8u, 8u, 0.0f, 1.0e-4f, "lut contrast dark zero");
+    checkLutChannel(lut, size, 24u, 24u, 24u, 1.0f, 1.0e-4f, "lut contrast bright one");
+}
+
+void testGradingLutSaturation()
+{
+    constexpr std::uint32_t size = 33u;
+    std::vector<float> lut(static_cast<std::size_t>(size) * size * size * 4u);
+    ksge::GradingParams params = {};
+    params.exposure = 1.0f;
+    params.contrast = 1.0f;
+    params.saturation = 0.0f;
+    ksge::generateGradingLut(lut.data(), size, params);
+
+    const std::size_t pixel =
+        (static_cast<std::size_t>(8u) * size + 8u) * size + 24u;
+    const float r = lut[pixel * 4u];
+    const float g = lut[pixel * 4u + 1u];
+    const float b = lut[pixel * 4u + 2u];
+    CHECK(r > g - 1.0e-4f && r < g + 1.0e-4f);
+    CHECK(g > b - 1.0e-4f && g < b + 1.0e-4f);
 }
 
 void testPrepareTriangle()
@@ -135,6 +242,10 @@ void testSphereNormals()
 int runGraphicsTests()
 {
     testShaderSourcesCompile();
+    testPostProcessShadersCompile();
+    testGradingLutIdentity();
+    testGradingLutContrast();
+    testGradingLutSaturation();
     testPrepareTriangle();
     testCubeStructure();
     testSphereNormals();

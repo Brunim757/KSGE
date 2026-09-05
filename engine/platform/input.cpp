@@ -37,6 +37,13 @@ void Input::capture(Window& window)
     setIf(KeyLeftShift, GLFW_KEY_LEFT_SHIFT);
     setIf(KeyEscape, GLFW_KEY_ESCAPE);
     setIf(KeyDelete, GLFW_KEY_DELETE);
+    setIf(KeyDigit0, GLFW_KEY_0);
+    setIf(KeyDigit1, GLFW_KEY_1);
+    setIf(KeyDigit2, GLFW_KEY_2);
+    setIf(KeyDigit3, GLFW_KEY_3);
+    setIf(KeyDigit4, GLFW_KEY_4);
+    setIf(KeyDigit5, GLFW_KEY_5);
+    setIf(KeyDigit6, GLFW_KEY_6);
 
     const int leftButton = glfwGetMouseButton(handle, GLFW_MOUSE_BUTTON_LEFT);
     const int rightButton = glfwGetMouseButton(handle, GLFW_MOUSE_BUTTON_RIGHT);

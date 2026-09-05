@@ -26,6 +26,9 @@ public:
 
     ID3D11Device* device() const;
     ID3D11DeviceContext* context() const;
+    ID3D11RenderTargetView* renderTarget() const;
+    std::int32_t width() const;
+    std::int32_t height() const;
 
 private:
     void createDevice();

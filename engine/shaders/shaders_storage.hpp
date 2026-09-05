@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace ksge {
 namespace shaders {
 
@@ -240,6 +242,403 @@ float4 main(VSOut input) : SV_Target
     return float4(sky + sunGlow, 1.0);
 }
 )";
+
+inline constexpr const char* kPostVertex = R"(
+struct VSOut
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD;
+};
+
+VSOut main(uint vertexId : SV_VertexID)
+{
+    float2 grid = float2((vertexId << 1u) & 2u, vertexId & 2u);
+    VSOut output;
+    output.position = float4(grid * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
+    output.uv = grid * 0.5;
+    return output;
+}
+)";
+
+inline constexpr const char* kPostPreamble = R"(
+struct VSOut
+{
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD;
+};
+
+cbuffer PostCB : register(b0)
+{
+    row_major float4x4 gViewProj;
+    row_major float4x4 gInvViewProj;
+    float4 gCameraPos;
+    float4 gViewport;
+    float4 gTargetSize;
+    float4 gDebugView;
+    float4 gCamNearFar;
+    float4 gSun;
+    float4 gSunColor;
+    float4 gFogParams;
+    float4 gSsaoParams;
+    float4 gBloomParams;
+    float4 gCompositeParams;
+};
+
+float3 reconstructWorld(float2 uv, float depth)
+{
+    float4 ndc = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
+    float4 world = mul(ndc, gInvViewProj);
+    return world.xyz / world.w;
+}
+)";
+
+inline constexpr const char* kSsaoBody = R"(
+Texture2D gDepth : register(t0);
+Texture2D gNoise : register(t1);
+SamplerState gPointSampler : register(s0);
+
+static const float3 gKernel[16] = {
+    float3(0.23, -0.71, 0.67),
+    float3(-0.49, 0.22, 0.84),
+    float3(0.66, 0.50, 0.56),
+    float3(0.28, 0.90, 0.34),
+    float3(-0.87, -0.17, 0.46),
+    float3(0.94, -0.28, 0.20),
+    float3(-0.33, 0.61, 0.72),
+    float3(0.08, -0.40, 0.91),
+    float3(-0.64, -0.45, 0.62),
+    float3(0.75, -0.58, 0.31),
+    float3(0.44, 0.79, 0.43),
+    float3(-0.16, 0.97, 0.18),
+    float3(0.12, 0.20, 0.97),
+    float3(-0.95, 0.28, 0.13),
+    float3(0.55, -0.05, 0.83),
+    float3(-0.71, 0.55, 0.44),
+};
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+    if (depth >= 1.0)
+    {
+        return float4(1.0, 1.0, 1.0, 1.0);
+    }
+
+    float3 center = reconstructWorld(input.uv, depth);
+
+    float2 rightUv = input.uv + float2(gViewport.z, 0.0);
+    float2 upUv = input.uv + float2(0.0, gViewport.w);
+    float3 right = reconstructWorld(rightUv, gDepth.Sample(gPointSampler, rightUv).r);
+    float3 up = reconstructWorld(upUv, gDepth.Sample(gPointSampler, upUv).r);
+
+    float3 normal = normalize(cross(right - center, up - center));
+
+    float3 random = gNoise.Sample(gPointSampler, input.uv * gTargetSize.xy / 4.0).xyz * 2.0 - 1.0;
+    float3 tangent = normalize(random - normal * dot(random, normal));
+    float3 bitangent = cross(normal, tangent);
+    float3x3 tbn = float3x3(tangent, bitangent, normal);
+
+    float occlusion = 0.0;
+    for (uint i = 0u; i < 16u; ++i)
+    {
+        float scale = (float(i) + 1.0) / 16.0;
+        float3 sampleDir = mul(gKernel[i], tbn);
+        float3 samplePos = center + sampleDir * gSsaoParams.x * scale;
+
+        float4 projected = mul(float4(samplePos, 1.0), gViewProj);
+        float2 sampleUv = projected.xy / max(projected.w, 1e-5) * 0.5 + 0.5;
+        sampleUv.y = 1.0 - sampleUv.y;
+        if (projected.w <= 0.0 || any(sampleUv <= 0.0) || any(sampleUv >= 1.0))
+        {
+            continue;
+        }
+
+        float sampleDepth = gDepth.Sample(gPointSampler, sampleUv).r;
+        if (sampleDepth >= 1.0)
+        {
+            continue;
+        }
+        float3 sampleWorld = reconstructWorld(sampleUv, sampleDepth);
+        float viewSample = length(sampleWorld - gCameraPos.xyz);
+        float viewPos = length(samplePos - gCameraPos.xyz);
+        float rangeCheck = smoothstep(0.0, 1.0, gSsaoParams.x / (abs(viewSample - viewPos) + 0.02));
+        occlusion += (viewSample < viewPos ? 1.0 : 0.0) * rangeCheck;
+    }
+
+    float average = occlusion / 16.0;
+    float openness = 1.0 - smoothstep(0.0, 0.8, average);
+    return float4(openness, openness, openness, 1.0);
+}
+)";
+
+inline constexpr const char* kSsaoBlurHBody = R"(
+Texture2D gSsao : register(t0);
+Texture2D gDepth : register(t1);
+SamplerState gPointSampler : register(s0);
+
+static const float gBlurWeights[5] = {0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216};
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+    float total = 0.0;
+    float weightSum = 0.0;
+
+    for (int tap = -2; tap <= 2; ++tap)
+    {
+        float2 offset = float2(float(tap) * gTargetSize.z, 0.0);
+        float sampleDepth = gDepth.Sample(gPointSampler, input.uv + offset).r;
+        float depthWeight = 1.0 - smoothstep(0.0, gSsaoParams.x * 0.05, abs(sampleDepth - depth));
+        float weight = depthWeight * gBlurWeights[tap + 2];
+        float sampleAo = gSsao.Sample(gPointSampler, input.uv + offset).r;
+        total += sampleAo * weight;
+        weightSum += weight;
+    }
+
+    float output = weightSum > 0.0 ? total / weightSum : 1.0;
+    return float4(output, output, output, 1.0);
+}
+)";
+
+inline constexpr const char* kSsaoBlurVBody = R"(
+Texture2D gSsao : register(t0);
+Texture2D gDepth : register(t1);
+SamplerState gPointSampler : register(s0);
+
+static const float gBlurWeights[5] = {0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216};
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+    float total = 0.0;
+    float weightSum = 0.0;
+
+    for (int tap = -2; tap <= 2; ++tap)
+    {
+        float2 offset = float2(0.0, float(tap) * gTargetSize.w);
+        float sampleDepth = gDepth.Sample(gPointSampler, input.uv + offset).r;
+        float depthWeight = 1.0 - smoothstep(0.0, gSsaoParams.x * 0.05, abs(sampleDepth - depth));
+        float weight = depthWeight * gBlurWeights[tap + 2];
+        float sampleAo = gSsao.Sample(gPointSampler, input.uv + offset).r;
+        total += sampleAo * weight;
+        weightSum += weight;
+    }
+
+    float output = weightSum > 0.0 ? total / weightSum : 1.0;
+    return float4(output, output, output, 1.0);
+}
+)";
+
+inline constexpr const char* kFogBody = R"(
+Texture2D gDepth : register(t0);
+SamplerState gPointSampler : register(s0);
+
+float henyeyGreenstein(float cosTheta)
+{
+    const float g = 0.3;
+    const float g2 = g * g;
+    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
+    return (1.0 - g2) / (4.0 * 3.14159265 * pow(denom, 1.5));
+}
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+
+    float3 end = reconstructWorld(input.uv, depth);
+    float3 viewDir = normalize(end - gCameraPos.xyz);
+    float distance = length(end - gCameraPos.xyz);
+    if (distance <= 0.0001)
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float stepSize = distance / 16.0;
+    float3 scattering = float3(0.0, 0.0, 0.0);
+    float transmittance = 1.0;
+    float3 sunDir = normalize(gSun.xyz);
+
+    for (uint i = 0u; i < 16u; ++i)
+    {
+        float3 samplePoint = gCameraPos.xyz + viewDir * (float(i) + 0.5) * stepSize;
+        float height = max(samplePoint.y - gFogParams.z, 0.0);
+        float density = gFogParams.x * exp(-height * gFogParams.y);
+        float fogAmount = 1.0 - exp(-density * stepSize);
+
+        float phase = henyeyGreenstein(dot(viewDir, sunDir));
+        scattering += gSunColor.xyz * gSun.w * phase * fogAmount * transmittance;
+        transmittance *= 1.0 - fogAmount;
+    }
+
+    return float4(scattering, transmittance);
+}
+)";
+
+inline constexpr const char* kBloomExtractBody = R"(
+Texture2D gScene : register(t0);
+SamplerState gLinearSampler : register(s1);
+
+float4 main(VSOut input) : SV_Target
+{
+    float4 color = gScene.Sample(gLinearSampler, input.uv);
+    float brightness = max(color.r, max(color.g, color.b));
+    float knee = gBloomParams.y;
+    float soft = max(brightness - gBloomParams.x + knee, 0.0);
+    soft = soft * soft / max(4.0 * knee, 1e-4);
+    float contribution = max(soft, brightness - gBloomParams.x);
+    contribution = contribution / max(brightness, 1e-4);
+    return float4(color.xyz * saturate(contribution), 1.0);
+}
+)";
+
+inline constexpr const char* kBloomDownsampleBody = R"(
+Texture2D gScene : register(t0);
+SamplerState gLinearSampler : register(s1);
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 accumulated =
+        gScene.Sample(gLinearSampler, input.uv + float2(-0.5, -0.5) * gTargetSize.zw).xyz +
+        gScene.Sample(gLinearSampler, input.uv + float2(0.5, -0.5) * gTargetSize.zw).xyz +
+        gScene.Sample(gLinearSampler, input.uv + float2(-0.5, 0.5) * gTargetSize.zw).xyz +
+        gScene.Sample(gLinearSampler, input.uv + float2(0.5, 0.5) * gTargetSize.zw).xyz;
+    return float4(accumulated * 0.25, 1.0);
+}
+)";
+
+inline constexpr const char* kBloomBlurHBody = R"(
+Texture2D gScene : register(t0);
+SamplerState gLinearSampler : register(s1);
+
+static const float gBloomWeights[9] = {
+    0.01621622, 0.05405405, 0.12162162, 0.19459459, 0.22702703,
+    0.19459459, 0.12162162, 0.05405405, 0.01621622,
+};
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 accumulated = float3(0.0, 0.0, 0.0);
+    float weightSum = 0.0;
+
+    for (int tap = -4; tap <= 4; ++tap)
+    {
+        float2 offset = float2(float(tap) * gTargetSize.z, 0.0);
+        float weight = gBloomWeights[tap + 4];
+        accumulated += gScene.Sample(gLinearSampler, input.uv + offset).xyz * weight;
+        weightSum += weight;
+    }
+
+    return float4(accumulated / weightSum, 1.0);
+}
+)";
+
+inline constexpr const char* kBloomBlurVBody = R"(
+Texture2D gScene : register(t0);
+SamplerState gLinearSampler : register(s1);
+
+static const float gBloomWeights[9] = {
+    0.01621622, 0.05405405, 0.12162162, 0.19459459, 0.22702703,
+    0.19459459, 0.12162162, 0.05405405, 0.01621622,
+};
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 accumulated = float3(0.0, 0.0, 0.0);
+    float weightSum = 0.0;
+
+    for (int tap = -4; tap <= 4; ++tap)
+    {
+        float2 offset = float2(0.0, float(tap) * gTargetSize.w);
+        float weight = gBloomWeights[tap + 4];
+        accumulated += gScene.Sample(gLinearSampler, input.uv + offset).xyz * weight;
+        weightSum += weight;
+    }
+
+    return float4(accumulated / weightSum, 1.0);
+}
+)";
+
+inline constexpr const char* kBloomUpsampleBody = R"(
+Texture2D gCurrent : register(t0);
+Texture2D gUpper : register(t1);
+SamplerState gLinearSampler : register(s1);
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 current = gCurrent.Sample(gLinearSampler, input.uv).xyz;
+    float3 upper = gUpper.Sample(gLinearSampler, input.uv).xyz;
+    return float4(current + upper, 1.0);
+}
+)";
+
+inline constexpr const char* kCompositeBody = R"(
+Texture2D gScene : register(t0);
+Texture2D gSsao : register(t1);
+Texture2D gFog : register(t2);
+Texture2D gBloomBase : register(t3);
+Texture2D gBloomAccum : register(t4);
+Texture3D gLut : register(t5);
+Texture2D gDepth : register(t6);
+SamplerState gPointSampler : register(s0);
+SamplerState gLinearSampler : register(s1);
+
+float3 acesToneMap(float3 color)
+{
+    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
+}
+
+float4 main(VSOut input) : SV_Target
+{
+    float3 scene = gScene.Sample(gLinearSampler, input.uv).xyz;
+    float ao = gSsao.Sample(gLinearSampler, input.uv).r;
+    float4 fog = gFog.Sample(gLinearSampler, input.uv);
+    float3 bloom = gBloomBase.Sample(gLinearSampler, input.uv).xyz +
+                   gBloomAccum.Sample(gLinearSampler, input.uv).xyz;
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+
+    uint mode = uint(gDebugView.x);
+    if (mode == 1u)
+    {
+        return float4(scene, 1.0);
+    }
+    if (mode == 2u)
+    {
+        return float4(ao.xxx, 1.0);
+    }
+    if (mode == 3u)
+    {
+        return float4(fog.rgb + (1.0 - fog.a), 1.0);
+    }
+    if (mode == 4u)
+    {
+        return float4(bloom * 2.0, 1.0);
+    }
+    if (mode == 5u)
+    {
+        return float4((1.0 - depth).xxx, 1.0);
+    }
+    if (mode == 6u)
+    {
+        return float4(acesToneMap(scene), 1.0);
+    }
+
+    float3 color = scene;
+    color *= 1.0 - (1.0 - ao) * saturate(gCompositeParams.x);
+    color = color * (1.0 - fog.a * gCompositeParams.z) + fog.rgb * gCompositeParams.z;
+    color += bloom * gCompositeParams.y;
+    color = acesToneMap(color);
+    color = gLut.Sample(gLinearSampler, saturate(color)).xyz;
+    color = pow(color, 1.0 / 2.2);
+    return float4(color, 1.0);
+}
+)";
+
+inline std::string postProcessPixelShader(const char* body)
+{
+    std::string source(kPostPreamble);
+    source.append(body);
+    return source;
+}
 
 }
 }

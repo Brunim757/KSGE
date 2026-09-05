@@ -96,6 +96,17 @@ int main(int argc, char** argv)
     spawnDemoScene(world.handle(), cubeMesh, sphereMesh, cubeMesh);
 
     std::int32_t frameCount = 0;
+    std::uint32_t previousDebugKeys = 0u;
+    constexpr ksge::KeyCode kDebugKeys[7] = {
+        ksge::KeyDigit0,
+        ksge::KeyDigit1,
+        ksge::KeyDigit2,
+        ksge::KeyDigit3,
+        ksge::KeyDigit4,
+        ksge::KeyDigit5,
+        ksge::KeyDigit6,
+    };
+
     while (!window.shouldClose())
     {
         window.pollEvents();
@@ -111,6 +122,24 @@ int main(int argc, char** argv)
 
         input.capture(window);
         cameraService.update(input.snapshot());
+
+        std::uint32_t debugKeys = 0u;
+        for (int index = 0; index < 7; ++index)
+        {
+            if (ksge::isPressed(input.snapshot(), kDebugKeys[index]))
+            {
+                debugKeys |= 1u << static_cast<unsigned>(index);
+            }
+        }
+        for (int index = 0; index < 7; ++index)
+        {
+            const std::uint32_t mask = 1u << static_cast<unsigned>(index);
+            if ((debugKeys & mask) != 0u && (previousDebugKeys & mask) == 0u)
+            {
+                renderer.setDebugMode(static_cast<std::uint32_t>(index));
+            }
+        }
+        previousDebugKeys = debugKeys;
 
         world.step();
         device.beginFrame(kClearColor);

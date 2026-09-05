@@ -82,6 +82,7 @@ Renderer::Renderer(GraphicsDevice& device, flecs::world& world)
     world_.component<DirectionalLight>();
     world_.set<DirectionalLight>({});
 
+    postProcess_.attach(d3d_, context_);
     createPipeline();
     createStates();
     createDefaultTextures();
@@ -410,10 +411,14 @@ std::uint32_t Renderer::uploadTexture(const TextureData& source)
 
 void Renderer::render()
 {
+    d3d_ = device_.device();
+    context_ = device_.context();
     if (pbrVertexShader_ == nullptr || pbrPixelShader_ == nullptr)
     {
         return;
     }
+    postProcess_.attach(d3d_, context_);
+    postProcess_.beginScene(device_.width(), device_.height());
 
     const CameraFrame& frame = world_.get<CameraFrame>();
     const DirectionalLight& light = world_.get<DirectionalLight>();
@@ -445,6 +450,32 @@ void Renderer::render()
     });
 
     drawSky();
+    postProcess_.endScene();
+
+    PostFrameInfo info = {};
+    info.width = device_.width();
+    info.height = device_.height();
+    const DirectX::XMMATRIX viewProjection = math::load(frame.viewProjection);
+    math::store(info.viewProjection, viewProjection);
+    DirectX::XMVECTOR determinant = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
+    const DirectX::XMMATRIX inverse = DirectX::XMMatrixInverse(&determinant, viewProjection);
+    math::store(info.inverseViewProjection, inverse);
+    info.cameraPosition = {camPosition.x, camPosition.y, camPosition.z};
+    const Camera* camera = world_.entity("editor_camera").get<Camera>();
+    info.nearPlane = camera != nullptr ? camera->nearPlane : 0.1f;
+    info.farPlane = camera != nullptr ? camera->farPlane : 5000.0f;
+    info.sunDirection = {light.direction.x, light.direction.y, light.direction.z};
+    info.sunIntensity = light.intensity;
+    info.sunColor = light.color;
+    info.exposure = 1.0f;
+    info.debugMode = debugMode_;
+
+    postProcess_.run(info, device_.renderTarget());
+}
+
+void Renderer::setDebugMode(std::uint32_t mode)
+{
+    debugMode_ = mode & 0x7u;
 }
 
 void Renderer::drawMesh(

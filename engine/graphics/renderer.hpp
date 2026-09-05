@@ -11,6 +11,7 @@
 #include "engine/assets/texture_data.hpp"
 #include "engine/graphics/device.hpp"
 #include "engine/graphics/mesh_upload.hpp"
+#include "engine/graphics/postprocess.hpp"
 #include "engine/scene/components.hpp"
 
 namespace ksge {
@@ -44,6 +45,8 @@ public:
     std::uint32_t uploadTexture(const TextureData& texture);
 
     void render();
+
+    void setDebugMode(std::uint32_t mode);
 
 private:
     void createPipeline();
@@ -85,6 +88,9 @@ private:
     std::vector<GpuMesh> meshes_;
     std::vector<GpuTexture> textures_;
     std::uint32_t skyMesh_ = ~0u;
+
+    PostProcess postProcess_;
+    std::uint32_t debugMode_ = 0u;
 };
 
 }
