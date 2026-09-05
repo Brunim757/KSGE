@@ -236,19 +236,19 @@ void Renderer::createPipeline()
         vertexBytecode->Release();
     }
 
-    const D3D11_BUFFER_DESC sceneDesc = {};
+     D3D11_BUFFER_DESC sceneDesc = {};
     sceneDesc.ByteWidth = sizeof(SceneConstants);
     sceneDesc.Usage = D3D11_USAGE_DEFAULT;
     sceneDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     d3d_->CreateBuffer(&sceneDesc, nullptr, &sceneBuffer_);
 
-    const D3D11_BUFFER_DESC objectDesc = {};
+     D3D11_BUFFER_DESC objectDesc = {};
     objectDesc.ByteWidth = sizeof(ObjectConstants);
     objectDesc.Usage = D3D11_USAGE_DEFAULT;
     objectDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     d3d_->CreateBuffer(&objectDesc, nullptr, &objectBuffer_);
 
-    const D3D11_BUFFER_DESC skyDesc = {};
+     D3D11_BUFFER_DESC skyDesc = {};
     skyDesc.ByteWidth = sizeof(SkyConstants);
     skyDesc.Usage = D3D11_USAGE_DEFAULT;
     skyDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
@@ -257,7 +257,7 @@ void Renderer::createPipeline()
 
 void Renderer::createStates()
 {
-    const D3D11_SAMPLER_DESC samplerDesc = {};
+     D3D11_SAMPLER_DESC samplerDesc = {};
     samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
     samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
     samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
@@ -265,7 +265,7 @@ void Renderer::createStates()
     samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
     d3d_->CreateSamplerState(&samplerDesc, &linearSampler_);
 
-    const D3D11_RASTERIZER_DESC solidDesc = {};
+     D3D11_RASTERIZER_DESC solidDesc = {};
     solidDesc.FillMode = D3D11_FILL_SOLID;
     solidDesc.CullMode = D3D11_CULL_BACK;
     solidDesc.FrontCounterClockwise = FALSE;
@@ -273,23 +273,23 @@ void Renderer::createStates()
     solidDesc.MultisampleEnable = TRUE;
     d3d_->CreateRasterizerState(&solidDesc, &solidState_);
 
-    const D3D11_RASTERIZER_DESC doubleSidedDesc = solidDesc;
+     D3D11_RASTERIZER_DESC doubleSidedDesc = solidDesc;
     doubleSidedDesc.CullMode = D3D11_CULL_NONE;
     d3d_->CreateRasterizerState(&doubleSidedDesc, &doubleSidedState_);
 
-    const D3D11_DEPTH_STENCIL_DESC depthDesc = {};
+     D3D11_DEPTH_STENCIL_DESC depthDesc = {};
     depthDesc.DepthEnable = TRUE;
     depthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
     depthDesc.DepthFunc = D3D11_COMPARISON_LESS;
     d3d_->CreateDepthStencilState(&depthDesc, &depthState_);
 
-    const D3D11_DEPTH_STENCIL_DESC skyDepthDesc = {};
+     D3D11_DEPTH_STENCIL_DESC skyDepthDesc = {};
     skyDepthDesc.DepthEnable = TRUE;
     skyDepthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
     skyDepthDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
     d3d_->CreateDepthStencilState(&skyDepthDesc, &skyDepthState_);
 
-    const D3D11_BLEND_DESC blendDesc = {};
+     D3D11_BLEND_DESC blendDesc = {};
     blendDesc.RenderTarget[0].BlendEnable = FALSE;
     blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
     d3d_->CreateBlendState(&blendDesc, &opaqueBlendState_);

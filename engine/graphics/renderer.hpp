@@ -9,6 +9,7 @@
 
 #include "engine/graphics/device.hpp"
 #include "engine/graphics/mesh_upload.hpp"
+#include "engine/scene/components.hpp"
 
 namespace ksge {
 
