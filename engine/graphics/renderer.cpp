@@ -492,7 +492,8 @@ void Renderer::buildEntries(const Frustum& frustum)
     gbufferEntries_.clear();
     shadowEntries_.clear();
 
-    const DirectX::XMVECTOR camera = DirectX::XMLoadFloat3(&cameraPosition(world_));
+    const DirectX::XMFLOAT3 cameraFloat = cameraPosition(world_);
+    const DirectX::XMVECTOR camera = DirectX::XMLoadFloat3(&cameraFloat);
 
     world_.each([&](Transform& transform, MeshRenderer& meshRenderer, PbrMaterial& material)
     {
