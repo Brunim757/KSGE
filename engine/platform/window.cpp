@@ -30,12 +30,15 @@ Window::Window(std::int32_t width, std::int32_t height, const char* title)
     , pendingHeight_(height)
     , pendingScroll_(0.0)
     , resized_(false)
+    , keyState_{}
 {
     ensureGlfwInitialized();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     handle_ = glfwCreateWindow(width, height, title, nullptr, nullptr);
     glfwSetWindowUserPointer(handle_, this);
+    glfwSetKeyCallback(handle_, &Window::onKey);
+    glfwSetWindowFocusCallback(handle_, &Window::onFocus);
     glfwSetFramebufferSizeCallback(handle_, &Window::onFramebufferResize);
     glfwSetScrollCallback(handle_, &Window::onScroll);
 }
@@ -88,6 +91,36 @@ double Window::takeScrollDelta()
     const double delta = pendingScroll_;
     pendingScroll_ = 0.0;
     return delta;
+}
+
+bool Window::keyDown(int glfwKey) const
+{
+    if (glfwKey < 0 || glfwKey >= static_cast<int>(keyState_.size()))
+    {
+        return false;
+    }
+    return keyState_[static_cast<std::size_t>(glfwKey)] != 0u;
+}
+
+void Window::onKey(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    (void)scancode;
+    (void)mods;
+    Window* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (self && key >= 0 && key < static_cast<int>(self->keyState_.size()))
+    {
+        self->keyState_[static_cast<std::size_t>(key)] =
+            (action == GLFW_PRESS || action == GLFW_REPEAT) ? 1u : 0u;
+    }
+}
+
+void Window::onFocus(GLFWwindow* window, int focused)
+{
+    Window* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
+    if (self && !focused)
+    {
+        self->keyState_.fill(0u);
+    }
 }
 
 void Window::onFramebufferResize(GLFWwindow* window, int width, int height)

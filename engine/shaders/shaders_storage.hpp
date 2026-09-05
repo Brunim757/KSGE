@@ -198,7 +198,7 @@ cbuffer SkyCB : register(b0)
 
 VSOut main(VSIn input)
 {
-    float3 world = input.position + gCamPos.xyz;
+    float3 world = input.position;
 
     VSOut output;
     output.position = mul(float4(world, 1.0), gViewProj).xyww;

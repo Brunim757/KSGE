@@ -14,7 +14,7 @@ void Input::capture(Window& window)
 
     auto setIf = [&](KeyCode code, int glfwKey)
     {
-        if (glfwGetKey(handle, glfwKey) == GLFW_PRESS)
+        if (window.keyDown(glfwKey))
         {
             snapshot_.pressed |= 1u << static_cast<unsigned>(code);
         }

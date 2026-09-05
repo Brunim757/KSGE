@@ -272,7 +272,7 @@ MeshData makeCube(float size)
     };
     const float faceTangents[6][3] = {
         {0.0f, 0.0f, -1.0f},
-        {0.0f, 0.0f, 1.0f},
+        {0.0f, 0.0f, -1.0f},
         {1.0f, 0.0f, 0.0f},
         {1.0f, 0.0f, 0.0f},
         {1.0f, 0.0f, 0.0f},
@@ -322,10 +322,10 @@ MeshData makeCube(float size)
         const std::uint32_t base = static_cast<std::uint32_t>(face * 4);
         mesh.indices.push_back(base + 0u);
         mesh.indices.push_back(base + 1u);
-        mesh.indices.push_back(base + 2u);
-        mesh.indices.push_back(base + 0u);
-        mesh.indices.push_back(base + 2u);
         mesh.indices.push_back(base + 3u);
+        mesh.indices.push_back(base + 0u);
+        mesh.indices.push_back(base + 3u);
+        mesh.indices.push_back(base + 2u);
     }
 
     mesh.boundsMin = {-half, -half, -half};

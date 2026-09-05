@@ -1,10 +1,13 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 struct GLFWwindow;
 
 namespace ksge {
+
+constexpr std::size_t kGlfwKeyCount = 512u;
 
 class Window
 {
@@ -23,7 +26,11 @@ public:
     GLFWwindow* handle() const;
     double takeScrollDelta();
 
+    bool keyDown(int glfwKey) const;
+
 private:
+    static void onKey(GLFWwindow* window, int key, int scancode, int action, int mods);
+    static void onFocus(GLFWwindow* window, int focused);
     static void onFramebufferResize(GLFWwindow* window, int width, int height);
     static void onScroll(GLFWwindow* window, double offsetX, double offsetY);
 
@@ -34,6 +41,7 @@ private:
     std::int32_t pendingHeight_;
     double pendingScroll_;
     bool resized_;
+    std::array<std::uint8_t, kGlfwKeyCount> keyState_;
 };
 
 }
