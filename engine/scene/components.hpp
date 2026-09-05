@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "engine/scene/math.hpp"
 
 namespace ksge {

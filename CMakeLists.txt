@@ -32,6 +32,7 @@ add_library(ksge_engine STATIC
     engine/scene/camera_service.cpp
 )
 target_include_directories(ksge_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(ksge_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(ksge_engine PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
 target_link_libraries(ksge_engine PUBLIC
     glfw
