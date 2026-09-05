@@ -34,7 +34,7 @@ struct PbrMaterial
 
 struct DirectionalLight
 {
-    math::Vec3 direction{0.3f, -0.8f, -0.5f};
+    math::Vec3 direction{0.5f, 0.8f, 0.6f};
     float intensity = 3.0f;
     DirectX::XMFLOAT3 color{1.0f, 0.95f, 0.85f};
     float ambientStrength = 0.05f;
