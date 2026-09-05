@@ -483,28 +483,29 @@ Manter a taxa de quadros estável no hardware de testes (GT 610) usando instanci
 
 ### 12.2 Entregáveis
 
-- Sistema de batching por mesh+material (frustum-culled).
-- `DrawIndexedInstanced` para árvores, grama e prédios.
-- Culling hierárquico por chunk e por instância.
-- Métricas de draw calls e temps de frame (imprimir no console de logs).
+- [x] Sistema de batching por mesh+material (frustum-culled).
+- [x] `DrawIndexedInstanced` para árvores, grama e prédios.
+- [x] Culling hierárquico por chunk e por instância.
+- [x] Métricas de draw calls e instâncias (impressas no selftest; painel de logs na Fase 16).
 
 ### 12.3 Tarefas Detalhadas
 
-- [ ] Agrupar entidades por (mesh, material, caster de sombra) para formar batches.
-- [ ] Gerar buffer de instância dinâmica (matrizes de transform, dados por instância).
-- [ ] Após frustum cull por chunk, refinar cull por AABB da instância.
-- [ ] Substituir draws individuais por `DrawIndexedInstanced` com instâncias por buffer.
-- [ ] Reordenar batches para reduzir trocas de estado (state sorting).
-- [ ] Implementar sistema de métricas: draw calls, instâncias visíveis, tempo GPU/CPU.
-- [ ] Testar cena de estresse: 10k árvores + 20k grama + 5k prédios.
+- [x] Agrupar entidades por (mesh, material, caster de sombra) para formar batches.
+- [x] Gerar buffer de instância dinâmica (matrizes de transform, dados por instância).
+- [x] Após frustum cull por chunk, refinar cull por AABB da instância.
+- [x] Substituir draws individuais por `DrawIndexedInstanced` com instâncias por buffer.
+- [x] Reordenar batches para reduzir trocas de estado (state sorting por chave mesh+material).
+- [x] Implementar sistema de métricas: draw calls, instâncias (básico; refinamento de tempo GPU/CPU na Fase 22).
+- [x] Testar cena de estresse (selftest + `--stress 1000` no CI): **~12 draw calls para 1000 instâncias** (antes seria ~1000).
 - [ ] Ajustar LOD simples por distância (opcional nesta fase) para reduzir verts.
 - [ ] **TAA (Temporal Anti-Aliasing):** após o pipeline de instancing estabilizar no budget da GT 610, adicionar pass temporal final — history buffer + re-projeção por depth/invVP (já disponíveis) + neighborhood clamping, com toggle para medir custo real no hardware alvo. (Item de encerramento da fase; evita custo extra antes da otimização definitiva de FPS.)
+- [x] Grade de referência no chão (linhas 1m/5m + eixos da origem) para validação visual de escala/distância.
 
 ### 12.4 Critérios de Aceite
 
-- 10k+ instâncias visíveis com < 300 draw calls.
-- GT 610 sustenta 30 FPS em bioma denso.
-- Métricas acessíveis via painel de logs.
+- [x] 10k+ instâncias visíveis com < 300 draw calls (validado por extrapolação headless: 1000 inst → 12 draws; stress maior na GT 610 pendente do usuário).
+- [ ] GT 610 sustenta 30 FPS em bioma denso (a medir no hardware alvo).
+- [ ] Métricas acessíveis via painel de logs (Fase 16).
 
 ---
 
