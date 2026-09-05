@@ -498,6 +498,7 @@ Manter a taxa de quadros estável no hardware de testes (GT 610) usando instanci
 - [ ] Implementar sistema de métricas: draw calls, instâncias visíveis, tempo GPU/CPU.
 - [ ] Testar cena de estresse: 10k árvores + 20k grama + 5k prédios.
 - [ ] Ajustar LOD simples por distância (opcional nesta fase) para reduzir verts.
+- [ ] **TAA (Temporal Anti-Aliasing):** após o pipeline de instancing estabilizar no budget da GT 610, adicionar pass temporal final — history buffer + re-projeção por depth/invVP (já disponíveis) + neighborhood clamping, com toggle para medir custo real no hardware alvo. (Item de encerramento da fase; evita custo extra antes da otimização definitiva de FPS.)
 
 ### 12.4 Critérios de Aceite
 
