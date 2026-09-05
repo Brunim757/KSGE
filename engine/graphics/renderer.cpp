@@ -461,9 +461,10 @@ void Renderer::render()
     const DirectX::XMMATRIX inverse = DirectX::XMMatrixInverse(&determinant, viewProjection);
     math::store(info.inverseViewProjection, inverse);
     info.cameraPosition = {camPosition.x, camPosition.y, camPosition.z};
-    const Camera* camera = world_.entity("editor_camera").get<Camera>();
-    info.nearPlane = camera != nullptr ? camera->nearPlane : 0.1f;
-    info.farPlane = camera != nullptr ? camera->farPlane : 5000.0f;
+    const flecs::entity cameraEntity = world_.entity("editor_camera");
+    const bool hasCamera = cameraEntity.has<Camera>();
+    info.nearPlane = hasCamera ? cameraEntity.get<Camera>().nearPlane : 0.1f;
+    info.farPlane = hasCamera ? cameraEntity.get<Camera>().farPlane : 5000.0f;
     info.sunDirection = {light.direction.x, light.direction.y, light.direction.z};
     info.sunIntensity = light.intensity;
     info.sunColor = light.color;

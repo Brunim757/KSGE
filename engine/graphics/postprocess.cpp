@@ -197,7 +197,7 @@ void PostProcess::applySsao()
     const std::uint32_t halfHeight = halve(height_);
 
     beginPass(ssaoRaw_.rtv, static_cast<float>(halfWidth), static_cast<float>(halfHeight), false, ssaoShader_);
-    uploadConstants(halfWidth, halfHeight, halfWidth, halfHeight);
+    uploadConstants(halfWidth, halfHeight);
     ID3D11ShaderResourceView* resources[2] = {depth_.srv, noiseView_};
     context_->PSSetShaderResources(0u, 2u, resources);
     drawFullscreen();
@@ -215,14 +215,14 @@ void PostProcess::applySsaoBlur()
     const std::uint32_t halfHeight = halve(height_);
 
     beginPass(ssaoBlur_.rtv, static_cast<float>(halfWidth), static_cast<float>(halfHeight), false, ssaoBlurHShader_);
-    uploadConstants(halfWidth, halfHeight, halfWidth, halfHeight);
+    uploadConstants(halfWidth, halfHeight);
     ID3D11ShaderResourceView* horizontalResource[2] = {ssaoRaw_.srv, depth_.srv};
     context_->PSSetShaderResources(0u, 2u, horizontalResource);
     drawFullscreen();
     clearResources();
 
     beginPass(ssaoRaw_.rtv, static_cast<float>(halfWidth), static_cast<float>(halfHeight), false, ssaoBlurVShader_);
-    uploadConstants(halfWidth, halfHeight, halfWidth, halfHeight);
+    uploadConstants(halfWidth, halfHeight);
     ID3D11ShaderResourceView* verticalResource[2] = {ssaoBlur_.srv, depth_.srv};
     context_->PSSetShaderResources(0u, 2u, verticalResource);
     drawFullscreen();
@@ -239,7 +239,7 @@ void PostProcess::applyFog()
     const std::uint32_t halfHeight = halve(height_);
 
     beginPass(fog_.rtv, static_cast<float>(halfWidth), static_cast<float>(halfHeight), false, fogShader_);
-    uploadConstants(halfWidth, halfHeight, halfWidth, halfHeight);
+    uploadConstants(halfWidth, halfHeight);
 
     ID3D11ShaderResourceView* resources[1] = {depth_.srv};
     context_->PSSetShaderResources(0u, 1u, resources);
@@ -261,21 +261,21 @@ void PostProcess::applyBloom()
     const std::uint32_t sixteenthHeight = sixteenth(height_);
 
     beginPass(bloomBase_.rtv, static_cast<float>(quarterWidth), static_cast<float>(quarterHeight), false, bloomExtractShader_);
-    uploadConstants(quarterWidth, quarterHeight, width_, height_);
+    uploadConstants(width_, height_);
     ID3D11ShaderResourceView* extractResource[1] = {sceneColor_.srv};
     context_->PSSetShaderResources(0u, 1u, extractResource);
     drawFullscreen();
     clearResources();
 
     beginPass(bloomMip1_.rtv, static_cast<float>(eighthWidth), static_cast<float>(eighthHeight), false, bloomDownsampleShader_);
-    uploadConstants(eighthWidth, eighthHeight, quarterWidth, quarterHeight);
+    uploadConstants(quarterWidth, quarterHeight);
     ID3D11ShaderResourceView* downResource[1] = {bloomBase_.srv};
     context_->PSSetShaderResources(0u, 1u, downResource);
     drawFullscreen();
     clearResources();
 
 beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>(sixteenthHeight), false, bloomDownsampleShader_);
-    uploadConstants(sixteenthWidth, sixteenthHeight, eighthWidth, eighthHeight);
+    uploadConstants(eighthWidth, eighthHeight);
     ID3D11ShaderResourceView* downResource2[1] = {bloomMip1_.srv};
     context_->PSSetShaderResources(0u, 1u, downResource2);
     drawFullscreen();
@@ -284,14 +284,14 @@ beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>
     if (bloomBlurHShader_ != nullptr && bloomBlurVShader_ != nullptr && bloomTemp_.rtv != nullptr)
     {
         beginPass(bloomTemp_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>(sixteenthHeight), false, bloomBlurHShader_);
-        uploadConstants(sixteenthWidth, sixteenthHeight, sixteenthWidth, sixteenthHeight);
+        uploadConstants(sixteenthWidth, sixteenthHeight);
         ID3D11ShaderResourceView* blurResource[1] = {bloomMip2_.srv};
         context_->PSSetShaderResources(0u, 1u, blurResource);
         drawFullscreen();
         clearResources();
 
 beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>(sixteenthHeight), false, bloomBlurVShader_);
-        uploadConstants(sixteenthWidth, sixteenthHeight, sixteenthWidth, sixteenthHeight);
+        uploadConstants(sixteenthWidth, sixteenthHeight);
         ID3D11ShaderResourceView* blurResource2[1] = {bloomTemp_.srv};
         context_->PSSetShaderResources(0u, 1u, blurResource2);
         drawFullscreen();
@@ -301,7 +301,7 @@ beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>
     if (bloomUpsampleShader_ != nullptr && bloomAccum_.rtv != nullptr)
     {
         beginPass(bloomAccum_.rtv, static_cast<float>(eighthWidth), static_cast<float>(eighthHeight), false, bloomUpsampleShader_);
-        uploadConstants(eighthWidth, eighthHeight, eighthWidth, eighthHeight);
+        uploadConstants(eighthWidth, eighthHeight);
         ID3D11ShaderResourceView* upsampledResources[2] = {bloomMip1_.srv, bloomMip2_.srv};
         context_->PSSetShaderResources(0u, 2u, upsampledResources);
         drawFullscreen();
@@ -319,7 +319,7 @@ void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
     }
 
     beginPass(backbuffer, static_cast<float>(width_), static_cast<float>(height_), false, compositeShader_);
-    uploadConstants(width_, height_, width_, height_);
+    uploadConstants(width_, height_);
 
     ID3D11ShaderResourceView* resources[kMaxBinds] = {
         sceneColor_.srv,
@@ -374,11 +374,7 @@ void PostProcess::clearResources()
     context_->PSSetShaderResources(0u, kMaxBinds, nullResources);
 }
 
-void PostProcess::uploadConstants(
-    float targetWidth,
-    float targetHeight,
-    float texelWidth,
-    float texelHeight)
+void PostProcess::uploadConstants(std::uint32_t texelWidth, std::uint32_t texelHeight)
 {
     if (constants_ == nullptr)
     {
@@ -400,10 +396,10 @@ void PostProcess::uploadConstants(
         1.0f / static_cast<float>(height_),
     };
     constants.targetSize = {
-        texelWidth,
-        texelHeight,
-        1.0f / texelWidth,
-        1.0f / texelHeight,
+        static_cast<float>(texelWidth),
+        static_cast<float>(texelHeight),
+        1.0f / static_cast<float>(texelWidth),
+        1.0f / static_cast<float>(texelHeight),
     };
     constants.debugView = {
         static_cast<float>(postDebugMode_),

@@ -79,7 +79,7 @@ private:
     void drawFullscreen();
     void bindSamplers();
     void clearResources();
-    void uploadConstants(float targetWidth, float targetHeight, float texelWidth, float texelHeight);
+    void uploadConstants(std::uint32_t texelWidth, std::uint32_t texelHeight);
     void updateGradedLut();
 
     void applySsao();
@@ -124,7 +124,7 @@ private:
     ID3D11Texture2D* noiseTexture_ = nullptr;
     ID3D11ShaderResourceView* noiseView_ = nullptr;
 
-    ID3D11Texture2D* lutTexture_ = nullptr;
+    ID3D11Texture3D* lutTexture_ = nullptr;
     ID3D11ShaderResourceView* lutView_ = nullptr;
     std::vector<float> lutBuffer_;
     GradingParams lutParams_;
