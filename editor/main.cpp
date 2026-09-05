@@ -195,7 +195,7 @@ int main(int argc, char** argv)
                 luminance,
                 renderer.frameCpuMs(),
                 renderer.frameGpuMs(),
-                static_cast<unsigned>(world.handle().count()),
+                static_cast<unsigned>(world.handle().count(flecs::All)),
                 renderer.frameDraws(),
                 renderer.gbufferDraws(),
                 renderer.shadowDraws(),
