@@ -57,7 +57,7 @@ private:
         std::uint32_t meshIndex,
         const DirectX::XMMATRIX& world,
         const PbrMaterial& material);
-    void drawShadowMesh(std::uint32_t meshIndex, const DirectX::XMMATRIX& world);
+    void drawShadowMesh(std::uint32_t meshIndex, const DirectX::XMMATRIX& world, bool doubleSided);
     void drawShadowCasters();
     void drawGBufferPass();
 
@@ -75,6 +75,7 @@ private:
     ID3D11Buffer* sceneBuffer_ = nullptr;
     ID3D11Buffer* objectBuffer_ = nullptr;
     ID3D11Buffer* shadowBuffer_ = nullptr;
+    ID3D11Buffer* shadowWorldBuffer_ = nullptr;
 
     ID3D11SamplerState* linearSampler_ = nullptr;
     ID3D11RasterizerState* solidState_ = nullptr;
