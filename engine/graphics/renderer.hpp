@@ -88,7 +88,7 @@ private:
         std::size_t first,
         std::size_t after,
         bool shadow);
-    void drawGrid();
+    void drawGrid(const DirectX::XMFLOAT4X4& baseViewProjection);
 
     void bindMesh(std::uint32_t meshIndex);
 

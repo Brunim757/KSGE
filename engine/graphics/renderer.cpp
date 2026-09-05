@@ -691,12 +691,22 @@ void Renderer::drawShadowBatches()
     drawObjectBatchRange(shadowEntries_, 0u, shadowEntries_.size(), true);
 }
 
-void Renderer::drawGrid()
+void Renderer::drawGrid(const DirectX::XMFLOAT4X4& baseViewProjection)
 {
     if (gridVertexShader_ == nullptr || gridPixelShader_ == nullptr || gridMesh_ >= meshes_.size())
     {
         return;
     }
+
+    SceneConstants gridScene = {};
+    gridScene.viewProjection = baseViewProjection;
+    const DirectX::XMFLOAT3 camPosition = cameraPosition(world_);
+    gridScene.camPosition = {camPosition.x, camPosition.y, camPosition.z, 1.0f};
+    gridScene.sunDirection = {0.5f, 0.8f, 0.6f, 0.0f};
+    gridScene.sunColor = {1.0f, 0.95f, 0.85f, 1.0f};
+    gridScene.skyTop = {0.22f, 0.42f, 0.72f, 1.0f};
+    gridScene.skyHorizon = {0.55f, 0.63f, 0.70f, 1.0f};
+    context_->UpdateSubresource(sceneBuffer_, 0u, nullptr, &gridScene, 0u, 0u);
 
     ObjectConstants object = {};
     math::store(object.world, DirectX::XMMatrixTranslation(0.0f, -0.5f, 0.0f));
@@ -780,6 +790,8 @@ void Renderer::render()
     postProcess_.beginScene(device_.width(), device_.height());
 
     const DirectX::XMMATRIX baseViewProjection = math::load(frame.viewProjection);
+    DirectX::XMFLOAT4X4 baseViewProjectionStored;
+    math::store(baseViewProjectionStored, baseViewProjection);
     DirectX::XMMATRIX displayViewProjection = baseViewProjection;
     if (debugMode_ == 0u)
     {
@@ -812,7 +824,7 @@ void Renderer::render()
     context_->OMSetDepthStencilState(depthState_, 0u);
 
     drawGBufferBatches();
-    drawGrid();
+    drawGrid(baseViewProjectionStored);
     postProcess_.endScene();
 
     PostFrameInfo info = {};
