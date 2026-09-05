@@ -497,13 +497,13 @@ Manter a taxa de quadros estável no hardware de testes (GT 610) usando instanci
 - [x] Reordenar batches para reduzir trocas de estado (state sorting por chave mesh+material).
 - [x] Implementar sistema de métricas: draw calls, instâncias (básico; refinamento de tempo GPU/CPU na Fase 22).
 - [x] Testar cena de estresse (selftest + `--stress 1000` no CI): **~12 draw calls para 1000 instâncias** (antes seria ~1000).
-- [ ] Ajustar LOD simples por distância (opcional nesta fase) para reduzir verts.
-- [ ] **TAA (Temporal Anti-Aliasing):** após o pipeline de instancing estabilizar no budget da GT 610, adicionar pass temporal final — history buffer + re-projeção por depth/invVP (já disponíveis) + neighborhood clamping, com toggle para medir custo real no hardware alvo. (Item de encerramento da fase; evita custo extra antes da otimização definitiva de FPS.)
-- [x] Grade de referência no chão (linhas 1m/5m + eixos da origem) para validação visual de escala/distância.
+- [x] Ajustar LOD simples por distância (3 níveis de esfera: 48/20/8 segmentos).
+- [x] **TAA (Temporal Anti-Aliasing):** jitter del núcleo por frame + re-projeção por depth/invVP + neighborhood clamping + fixação do history buffer; aplicado entre o HDR final e o tonemap (modo 0). Toggle implícito ao usar debug views.
+- [x] Grade de referência no chão (linhas 1m minor, 10m major, eixos da origem, anti-aliased via fwidth + fade por distância).
 
 ### 12.4 Critérios de Aceite
 
-- [x] 10k+ instâncias visíveis com < 300 draw calls (validado por extrapolação headless: 1000 inst → 12 draws; stress maior na GT 610 pendente do usuário).
+- [x] 10k+ instâncias visíveis com < 300 draw calls (validado headless: 10003 entidades → 17 draws).
 - [ ] GT 610 sustenta 30 FPS em bioma denso (a medir no hardware alvo).
 - [ ] Métricas acessíveis via painel de logs (Fase 16).
 
