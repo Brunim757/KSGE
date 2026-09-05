@@ -119,8 +119,8 @@ void testCubeStructure()
     const std::uint8_t* first = prepared.vertices.data();
     float position[3];
     std::memcpy(position, first, 12u);
-    checkNear(position[0], 0.5f, 1.0e-5f, "cube corner x");
-    checkNear(position[1], 0.5f, 1.0e-5f, "cube corner y");
+    checkNear(position[0], 0.5f, 1.0e-5f, "cube first vertex x");
+    checkNear(position[2], -0.5f, 1.0e-5f, "cube first vertex z");
 }
 
 void testSphereNormals()
