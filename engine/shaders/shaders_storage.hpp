@@ -145,7 +145,7 @@ struct VSOut
     float4 tangent : TANGENT;
 };
 
-StructuredBuffer<row_major float4x4> gInstances : register(t0);
+StructuredBuffer<float4x4> gInstances : register(t0);
 
 cbuffer SceneCB : register(b0)
 {
@@ -159,7 +159,7 @@ cbuffer SceneCB : register(b0)
 
 VSOut main(VSIn input, uint instanceId : SV_InstanceID)
 {
-    row_major float4x4 world = gInstances[instanceId];
+    float4x4 world = gInstances[instanceId];
     float4 worldPosition = mul(float4(input.position, 1.0), world);
 
     VSOut output;
@@ -178,7 +178,7 @@ struct VSIn
     float3 position : POSITION;
 };
 
-StructuredBuffer<row_major float4x4> gInstances : register(t0);
+StructuredBuffer<float4x4> gInstances : register(t0);
 
 cbuffer ShadowCB : register(b0)
 {
@@ -187,7 +187,7 @@ cbuffer ShadowCB : register(b0)
 
 float4 main(VSIn input, uint instanceId : SV_InstanceID) : SV_Position
 {
-    row_major float4x4 world = gInstances[instanceId];
+    float4x4 world = gInstances[instanceId];
     return mul(mul(float4(input.position, 1.0), world), gLightViewProj);
 }
 )";
@@ -209,29 +209,38 @@ struct GBufferOut
     float4 data : SV_Target2;
 };
 
+float2 gridLineAlpha(float2 gridCoord, float halfWidth)
+{
+    float2 lineDist = abs(frac(gridCoord) - 0.0);
+    lineDist = min(lineDist, 1.0 - lineDist);
+    return 1.0 - smoothstep(0.0, halfWidth * 2.0, lineDist);
+}
+
 GBufferOut main(VSOut input)
 {
     float2 gridCoord = input.world.xz;
-    float2 lineDist = abs(frac(gridCoord) - 0.0);
-    lineDist = min(lineDist, 1.0 - lineDist);
     float halfWidth = max(fwidth(gridCoord.x), fwidth(gridCoord.y)) * 0.5;
-    clip(halfWidth - min(lineDist.x, lineDist.y));
+    float2 lineAlpha = gridLineAlpha(gridCoord, halfWidth);
+    float alpha = max(lineAlpha.x, lineAlpha.y);
+    if (alpha <= 0.005)
+    {
+        discard;
+    }
 
     float2 majorCoord = gridCoord / 5.0;
-    float2 majorDist = abs(frac(majorCoord) - 0.0);
-    majorDist = min(majorDist, 1.0 - majorDist);
-    float majorLine = 1.0 - smoothstep(0.0, halfWidth * 2.0, min(majorDist.x, majorDist.y));
+    float2 majorAlpha = gridLineAlpha(majorCoord, halfWidth / 5.0);
+    float majorLine = max(majorAlpha.x, majorAlpha.y);
 
     float originDistance = min(abs(gridCoord.x), abs(gridCoord.z));
     float originGlow = 1.0 - smoothstep(0.0, 4.0, originDistance);
 
-    float3 lineColor = lerp(float3(0.30f, 0.33f, 0.38f), float3(0.55f, 0.60f, 0.70f), majorLine);
-    lineColor = lerp(lineColor, float3(0.90f, 0.95f, 1.00f), originGlow * 0.7);
+    float3 lineColor = lerp(float3(0.30, 0.33, 0.38), float3(0.55, 0.60, 0.70), majorLine);
+    lineColor = lerp(lineColor, float3(0.90, 0.95, 1.00), originGlow * 0.7);
 
     GBufferOut output;
     output.color = float4(lineColor, 0.0);
-    output.normal = float4(0.5f, 1.0f, 0.5f, 1.0f);
-    output.data = float4(0.0f, 0.0f, 0.0f, 1.0f);
+    output.normal = float4(0.5, 1.0, 0.5, 1.0);
+    output.data = float4(0.0, 0.0, 0.0, 1.0);
     return output;
 }
 )";

@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -44,42 +46,27 @@ void testShaderSourcesCompile()
     ID3DBlob* bytecode = nullptr;
     std::string error;
 
-    CHECK(ksge::compileShaderSource(ksge::shaders::kPbrVertex, "main", "vs_5_0", bytecode, error));
-    if (bytecode)
+    auto source = [&](std::string_view name, std::string_view target, const char* raw)
     {
-        bytecode->Release();
-        bytecode = nullptr;
-    }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kGBufferInstancedVertex, "main", "vs_5_0", bytecode, error));
-    if (bytecode)
-    {
-        bytecode->Release();
-        bytecode = nullptr;
-    }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kGBufferPixel, "main", "ps_5_0", bytecode, error));
-    if (bytecode)
-    {
-        bytecode->Release();
-        bytecode = nullptr;
-    }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kShadowInstancedVertex, "main", "vs_5_0", bytecode, error));
-    if (bytecode)
-    {
-        bytecode->Release();
-        bytecode = nullptr;
-    }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kShadowPixel, "main", "ps_5_0", bytecode, error));
-    if (bytecode)
-    {
-        bytecode->Release();
-        bytecode = nullptr;
-    }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kGridPixel, "main", "ps_5_0", bytecode, error));
-    if (bytecode)
-    {
-        bytecode->Release();
-        bytecode = nullptr;
-    }
+        const bool ok = ksge::compileShaderSource(raw, "main", target, bytecode, error);
+        if (!ok)
+        {
+            std::printf("SHADER %s FAILED:\n%s\n", std::string(name).c_str(), error.c_str());
+        }
+        CHECK(ok);
+        if (bytecode)
+        {
+            bytecode->Release();
+            bytecode = nullptr;
+        }
+    };
+
+    source("pbr vertex", "vs_5_0", ksge::shaders::kPbrVertex);
+    source("gbuffer instanced vertex", "vs_5_0", ksge::shaders::kGBufferInstancedVertex);
+    source("gbuffer pixel", "ps_5_0", ksge::shaders::kGBufferPixel);
+    source("shadow instanced vertex", "vs_5_0", ksge::shaders::kShadowInstancedVertex);
+    source("shadow pixel", "ps_5_0", ksge::shaders::kShadowPixel);
+    source("grid pixel", "ps_5_0", ksge::shaders::kGridPixel);
 }
 
 void testMakeQuad()
