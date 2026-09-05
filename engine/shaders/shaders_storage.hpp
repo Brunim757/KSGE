@@ -231,7 +231,7 @@ GBufferOut main(VSOut input)
     float2 majorAlpha = gridLineAlpha(majorCoord, halfWidth / 5.0);
     float majorLine = max(majorAlpha.x, majorAlpha.y);
 
-    float originDistance = min(abs(gridCoord.x), abs(gridCoord.z));
+    float originDistance = min(abs(gridCoord.x), abs(gridCoord.y));
     float originGlow = 1.0 - smoothstep(0.0, 4.0, originDistance);
 
     float3 lineColor = lerp(float3(0.30, 0.33, 0.38), float3(0.55, 0.60, 0.70), majorLine);
