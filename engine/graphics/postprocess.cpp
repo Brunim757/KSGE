@@ -33,16 +33,22 @@ struct PostConstants
     DirectX::XMFLOAT4 cameraNearFar;
     DirectX::XMFLOAT4 sun;
     DirectX::XMFLOAT4 sunColor;
+    DirectX::XMFLOAT4 skyTop;
+    DirectX::XMFLOAT4 skyHorizon;
     DirectX::XMFLOAT4 fogParams;
     DirectX::XMFLOAT4 ssaoParams;
     DirectX::XMFLOAT4 bloomParams;
+    DirectX::XMFLOAT4 shadowSplits;
+    DirectX::XMFLOAT4 shadowParams;
     DirectX::XMFLOAT4 compositeParams;
+    DirectX::XMFLOAT4X4 shadowViewProjection[kShadowCascades];
 };
 
 constexpr UINT kFullscreenVertexCount = 3u;
 constexpr std::uint32_t kSsaoSamples = 16u;
-constexpr UINT kMaxBinds = 8u;
+constexpr UINT kMaxBinds = 12u;
 constexpr std::uint32_t kMinTargetSize = 1u;
+constexpr std::uint32_t kShadowMapSize = 1024u;
 
 std::uint32_t halve(std::uint32_t value)
 {
@@ -139,14 +145,18 @@ void PostProcess::beginScene(std::uint32_t width, std::uint32_t height)
         return;
     }
     ensureTargets(width, height);
-    if (sceneColor_.rtv == nullptr || depth_.dsv == nullptr)
+    if (gbufferA_.rtv == nullptr || depth_.dsv == nullptr)
     {
         return;
     }
 
-    ID3D11RenderTargetView* renderTarget = sceneColor_.rtv;
-    context_->OMSetRenderTargets(1u, &renderTarget, depth_.dsv);
+    ID3D11RenderTargetView* renderTargets[3] = {gbufferA_.rtv, gbufferB_.rtv, gbufferC_.rtv};
+    context_->OMSetRenderTargets(3u, renderTargets, depth_.dsv);
     const float clearColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (std::uint32_t i = 0u; i < 3u; ++i)
+    {
+        context_->ClearRenderTargetView(renderTargets[i], clearColor);
+    }
     context_->ClearRenderTargetView(sceneColor_.rtv, clearColor);
     context_->ClearDepthStencilView(depth_.dsv, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0u);
 
@@ -163,9 +173,32 @@ void PostProcess::endScene()
     {
         return;
     }
-    ID3D11RenderTargetView* nullRenderTarget = nullptr;
-    context_->OMSetRenderTargets(1u, &nullRenderTarget, nullptr);
+    ID3D11RenderTargetView* nullRenderTargets[3] = {};
+    context_->OMSetRenderTargets(3u, nullRenderTargets, nullptr);
     clearResources();
+}
+
+void PostProcess::beginShadowMap(std::uint32_t cascade)
+{
+    if (context_ == nullptr || cascade >= kShadowCascades || shadowMaps_[cascade].dsv == nullptr)
+    {
+        return;
+    }
+    context_->OMSetRenderTargets(0u, nullptr, shadowMaps_[cascade].dsv);
+    D3D11_VIEWPORT viewport = {};
+    defaultViewport(viewport);
+    viewport.Width = static_cast<float>(kShadowMapSize);
+    viewport.Height = static_cast<float>(kShadowMapSize);
+    context_->RSSetViewports(1u, &viewport);
+}
+
+void PostProcess::endShadowMap()
+{
+    if (context_ == nullptr)
+    {
+        return;
+    }
+    context_->OMSetRenderTargets(0u, nullptr, nullptr);
 }
 
 void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuffer)
@@ -189,6 +222,18 @@ void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuf
     postSunDir_ = info.sunDirection;
     postSunIntensity_ = info.sunIntensity;
     postSunColor_ = info.sunColor;
+    postSkyTop_ = info.skyTop;
+    postSkyHorizon_ = info.skyHorizon;
+    for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
+    {
+        postShadowViewProj_[cascade] = info.shadowViewProjection[cascade];
+    }
+    postCascadeSplits_[0] = info.cascadeSplits[0];
+    postCascadeSplits_[1] = info.cascadeSplits[1];
+    postCascadeSplits_[2] = info.cascadeSplits[2];
+    postShadowMapSize_ = info.shadowMapSize;
+    postShadowBlendWidth_ = info.shadowBlendWidth;
+    postShadowDepthBias_ = info.shadowDepthBias;
     postExposure_ = info.exposure;
     postDebugMode_ = info.debugMode;
 
@@ -209,10 +254,26 @@ void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuf
         clearTarget(bloomAccum_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
         clearTarget(bloomTemp_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
     }
+    if (deferredLightShader_ == nullptr || skyPostShader_ == nullptr)
+    {
+        clearTarget(sceneColor_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+    if (ssrShader_ == nullptr)
+    {
+        clearTarget(ssr_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+    if (ssgiShader_ == nullptr)
+    {
+        clearTarget(ssgi_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
 
     updateGradedLut();
     applySsao();
     applySsaoBlur();
+    applyDeferredLight();
+    applySsr();
+    applySsgi();
+    applySky();
     applyFog();
     applyBloom();
     applyComposite(backbuffer);
@@ -256,6 +317,84 @@ void PostProcess::applySsaoBlur()
     uploadConstants(halfWidth, halfHeight);
     ID3D11ShaderResourceView* verticalResource[2] = {ssaoBlur_.srv, depth_.srv};
     context_->PSSetShaderResources(0u, 2u, verticalResource);
+    drawFullscreen();
+    clearResources();
+}
+
+void PostProcess::applyDeferredLight()
+{
+    if (deferredLightShader_ == nullptr || sceneColor_.rtv == nullptr ||
+        gbufferA_.srv == nullptr || gbufferB_.srv == nullptr || gbufferC_.srv == nullptr ||
+        depth_.srv == nullptr || ssaoRaw_.srv == nullptr)
+    {
+        return;
+    }
+    beginPass(sceneColor_.rtv, static_cast<float>(width_), static_cast<float>(height_), false, deferredLightShader_);
+    uploadConstants(width_, height_);
+
+    ID3D11ShaderResourceView* resources[8] = {
+        gbufferA_.srv,
+        gbufferB_.srv,
+        gbufferC_.srv,
+        depth_.srv,
+        ssaoRaw_.srv,
+        shadowMaps_[0].srv,
+        shadowMaps_[1].srv,
+        shadowMaps_[2].srv,
+    };
+    context_->PSSetShaderResources(0u, 8u, resources);
+    drawFullscreen();
+    clearResources();
+}
+
+void PostProcess::applySsr()
+{
+    if (ssrShader_ == nullptr || ssr_.rtv == nullptr ||
+        sceneColor_.srv == nullptr || gbufferA_.srv == nullptr ||
+        gbufferB_.srv == nullptr || depth_.srv == nullptr)
+    {
+        return;
+    }
+    const std::uint32_t halfWidth = halve(width_);
+    const std::uint32_t halfHeight = halve(height_);
+
+    beginPass(ssr_.rtv, static_cast<float>(halfWidth), static_cast<float>(halfHeight), false, ssrShader_);
+    uploadConstants(halfWidth, halfHeight);
+    ID3D11ShaderResourceView* resources[4] = {sceneColor_.srv, gbufferA_.srv, gbufferB_.srv, depth_.srv};
+    context_->PSSetShaderResources(0u, 4u, resources);
+    drawFullscreen();
+    clearResources();
+}
+
+void PostProcess::applySsgi()
+{
+    if (ssgiShader_ == nullptr || ssgi_.rtv == nullptr ||
+        sceneColor_.srv == nullptr || gbufferA_.srv == nullptr ||
+        gbufferB_.srv == nullptr || depth_.srv == nullptr)
+    {
+        return;
+    }
+    const std::uint32_t halfWidth = halve(width_);
+    const std::uint32_t halfHeight = halve(height_);
+
+    beginPass(ssgi_.rtv, static_cast<float>(halfWidth), static_cast<float>(halfHeight), false, ssgiShader_);
+    uploadConstants(halfWidth, halfHeight);
+    ID3D11ShaderResourceView* resources[4] = {sceneColor_.srv, gbufferA_.srv, gbufferB_.srv, depth_.srv};
+    context_->PSSetShaderResources(0u, 4u, resources);
+    drawFullscreen();
+    clearResources();
+}
+
+void PostProcess::applySky()
+{
+    if (skyPostShader_ == nullptr || sceneColor_.rtv == nullptr || depth_.srv == nullptr)
+    {
+        return;
+    }
+    beginPass(sceneColor_.rtv, static_cast<float>(width_), static_cast<float>(height_), false, skyPostShader_);
+    uploadConstants(width_, height_);
+    ID3D11ShaderResourceView* resources[1] = {depth_.srv};
+    context_->PSSetShaderResources(0u, 1u, resources);
     drawFullscreen();
     clearResources();
 }
@@ -305,7 +444,7 @@ void PostProcess::applyBloom()
     drawFullscreen();
     clearResources();
 
-beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>(sixteenthHeight), false, bloomDownsampleShader_);
+    beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>(sixteenthHeight), false, bloomDownsampleShader_);
     uploadConstants(eighthWidth, eighthHeight);
     ID3D11ShaderResourceView* downResource2[1] = {bloomMip1_.srv};
     context_->PSSetShaderResources(0u, 1u, downResource2);
@@ -321,7 +460,7 @@ beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>
         drawFullscreen();
         clearResources();
 
-beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>(sixteenthHeight), false, bloomBlurVShader_);
+        beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>(sixteenthHeight), false, bloomBlurVShader_);
         uploadConstants(sixteenthWidth, sixteenthHeight);
         ID3D11ShaderResourceView* blurResource2[1] = {bloomTemp_.srv};
         context_->PSSetShaderResources(0u, 1u, blurResource2);
@@ -348,7 +487,8 @@ void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
     }
     if (compositeShader_ == nullptr || sceneColor_.srv == nullptr ||
         ssaoRaw_.srv == nullptr || fog_.srv == nullptr || bloomBase_.srv == nullptr ||
-        lutView_ == nullptr || depth_.srv == nullptr || copyShader_ == nullptr)
+        lutView_ == nullptr || depth_.srv == nullptr || copyShader_ == nullptr ||
+        ssr_.srv == nullptr || ssgi_.srv == nullptr)
     {
         drawSceneFallback(backbuffer);
         return;
@@ -365,8 +505,10 @@ void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
         bloomAccum_.srv,
         lutView_,
         depth_.srv,
+        ssr_.srv,
+        ssgi_.srv,
     };
-    context_->PSSetShaderResources(0u, 7u, resources);
+    context_->PSSetShaderResources(0u, 9u, resources);
     drawFullscreen();
     clearResources();
 }
@@ -425,6 +567,7 @@ void PostProcess::bindSamplers()
 {
     context_->PSSetSamplers(0u, 1u, &pointSampler_);
     context_->PSSetSamplers(1u, 1u, &linearSampler_);
+    context_->PSSetSamplers(2u, 1u, &shadowSampler_);
 }
 
 void PostProcess::clearResources()
@@ -469,10 +612,28 @@ void PostProcess::uploadConstants(std::uint32_t texelWidth, std::uint32_t texelH
     constants.cameraNearFar = {postNear_, postFar_, 0.0f, 0.0f};
     constants.sun = {postSunDir_.x, postSunDir_.y, postSunDir_.z, postSunIntensity_};
     constants.sunColor = {postSunColor_.x, postSunColor_.y, postSunColor_.z, 0.0f};
+    constants.skyTop = {postSkyTop_.x, postSkyTop_.y, postSkyTop_.z, 1.0f};
+    constants.skyHorizon = {postSkyHorizon_.x, postSkyHorizon_.y, postSkyHorizon_.z, 1.0f};
     constants.fogParams = {0.002f, 0.05f, 0.0f, 0.0f};
     constants.ssaoParams = {1.2f, 0.8f, static_cast<float>(kSsaoSamples), 0.0f};
-    constants.bloomParams = {1.0f, 0.35f, 0.0f, 0.0f};
-    constants.compositeParams = {0.45f, 0.8f, 1.0f, postExposure_};
+    constants.bloomParams = {1.0f, 0.35f, 0.8f, 0.0f};
+    constants.shadowSplits = {
+        postCascadeSplits_[0],
+        postCascadeSplits_[1],
+        postCascadeSplits_[2],
+        0.0f,
+    };
+    constants.shadowParams = {
+        1.0f / postShadowMapSize_,
+        1.0f / postShadowMapSize_,
+        postShadowDepthBias_,
+        postShadowBlendWidth_,
+    };
+    constants.compositeParams = {0.5f, 0.9f, 1.0f, postExposure_};
+    for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
+    {
+        constants.shadowViewProjection[cascade] = postShadowViewProj_[cascade];
+    }
 
     context_->UpdateSubresource(constants_, 0u, nullptr, &constants, 0u, 0u);
     context_->VSSetConstantBuffers(0u, 1u, &constants_);
@@ -523,8 +684,17 @@ void PostProcess::releaseTargets()
 {
     releaseTarget(sceneColor_);
     releaseTarget(depth_);
+    releaseTarget(gbufferA_);
+    releaseTarget(gbufferB_);
+    releaseTarget(gbufferC_);
+    for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
+    {
+        releaseTarget(shadowMaps_[cascade]);
+    }
     releaseTarget(ssaoRaw_);
     releaseTarget(ssaoBlur_);
+    releaseTarget(ssr_);
+    releaseTarget(ssgi_);
     releaseTarget(fog_);
     releaseTarget(bloomBase_);
     releaseTarget(bloomMip1_);
@@ -547,6 +717,11 @@ void PostProcess::releaseTargets()
     {
         constants_->Release();
         constants_ = nullptr;
+    }
+    if (shadowSampler_)
+    {
+        shadowSampler_->Release();
+        shadowSampler_ = nullptr;
     }
     if (linearSampler_)
     {
@@ -607,16 +782,41 @@ void PostProcess::createTargets(std::uint32_t width, std::uint32_t height)
         writeDiagnostic("linear sampler creation failed", "post sampler");
     }
 
-    createTarget(width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, sceneColor_);
+    D3D11_SAMPLER_DESC shadowDesc = {};
+    shadowDesc.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    shadowDesc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+    shadowDesc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+    shadowDesc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+    shadowDesc.BorderColor[0] = 1.0f;
+    shadowDesc.BorderColor[1] = 1.0f;
+    shadowDesc.BorderColor[2] = 1.0f;
+    shadowDesc.BorderColor[3] = 1.0f;
+    shadowDesc.ComparisonFunc = D3D11_COMPARISON_LESS;
+    if (FAILED(d3d_->CreateSamplerState(&shadowDesc, &shadowSampler_)))
+    {
+        writeDiagnostic("shadow sampler creation failed", "post sampler");
+    }
+
+    createTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, gbufferA_);
+    createTarget(width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, gbufferB_);
+    createTarget(width, height, DXGI_FORMAT_R8G8B8A8_UNORM, gbufferC_);
     createDepthTarget(width, height);
+    createTarget(width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, sceneColor_);
     createTarget(halve(width), halve(height), DXGI_FORMAT_R8_UNORM, ssaoRaw_);
     createTarget(halve(width), halve(height), DXGI_FORMAT_R8_UNORM, ssaoBlur_);
+    createTarget(halve(width), halve(height), DXGI_FORMAT_R16G16B16A16_FLOAT, ssr_);
+    createTarget(halve(width), halve(height), DXGI_FORMAT_R16G16B16A16_FLOAT, ssgi_);
     createTarget(halve(width), halve(height), DXGI_FORMAT_R16G16B16A16_FLOAT, fog_);
     createTarget(quarter(width), quarter(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomBase_);
     createTarget(eighth(width), eighth(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomMip1_);
     createTarget(sixteenth(width), sixteenth(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomMip2_);
     createTarget(eighth(width), eighth(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomAccum_);
     createTarget(sixteenth(width), sixteenth(height), DXGI_FORMAT_R16G16B16A16_FLOAT, bloomTemp_);
+
+    for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
+    {
+        createShadowTarget(cascade);
+    }
 
     createNoiseTexture();
     createLut(33u);
@@ -694,6 +894,42 @@ void PostProcess::createDepthTarget(std::uint32_t width, std::uint32_t height)
     resourceDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     resourceDesc.Texture2D.MipLevels = 1u;
     d3d_->CreateShaderResourceView(depth_.texture, &resourceDesc, &depth_.srv);
+}
+
+void PostProcess::createShadowTarget(std::uint32_t cascade)
+{
+    Target& target = shadowMaps_[cascade];
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = kShadowMapSize;
+    desc.Height = kShadowMapSize;
+    desc.MipLevels = 1u;
+    desc.ArraySize = 1u;
+    desc.Format = DXGI_FORMAT_R32_TYPELESS;
+    desc.SampleDesc.Count = 1u;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+
+    if (FAILED(d3d_->CreateTexture2D(&desc, nullptr, &target.texture)))
+    {
+        writeDiagnostic("shadow texture creation failed", "shadow map");
+        return;
+    }
+
+    D3D11_DEPTH_STENCIL_VIEW_DESC depthViewDesc = {};
+    depthViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    depthViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+    if (FAILED(d3d_->CreateDepthStencilView(target.texture, &depthViewDesc, &target.dsv)))
+    {
+        writeDiagnostic("shadow depth view creation failed", "shadow map");
+        return;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC resourceDesc = {};
+    resourceDesc.Format = DXGI_FORMAT_R32_FLOAT;
+    resourceDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    resourceDesc.Texture2D.MipLevels = 1u;
+    d3d_->CreateShaderResourceView(target.texture, &resourceDesc, &target.srv);
 }
 
 void PostProcess::createNoiseTexture()
@@ -807,6 +1043,10 @@ void PostProcess::compileShaders()
     };
 
     compile("copy shader", copyShader_, shaders::postProcessPixelShader(shaders::kPostCopyBody));
+    compile("deferred light", deferredLightShader_, shaders::postProcessPixelShader(shaders::kDeferredLightBody));
+    compile("ssr", ssrShader_, shaders::postProcessPixelShader(shaders::kSsrBody));
+    compile("ssgi", ssgiShader_, shaders::postProcessPixelShader(shaders::kSsgiBody));
+    compile("sky post", skyPostShader_, shaders::postProcessPixelShader(shaders::kSkyPostBody));
     compile("ssao", ssaoShader_, shaders::postProcessPixelShader(shaders::kSsaoBody));
     compile("ssao blur h", ssaoBlurHShader_, shaders::postProcessPixelShader(shaders::kSsaoBlurHBody));
     compile("ssao blur v", ssaoBlurVShader_, shaders::postProcessPixelShader(shaders::kSsaoBlurVBody));
@@ -855,6 +1095,26 @@ void PostProcess::releaseShaders()
     {
         fogShader_->Release();
         fogShader_ = nullptr;
+    }
+    if (skyPostShader_)
+    {
+        skyPostShader_->Release();
+        skyPostShader_ = nullptr;
+    }
+    if (ssgiShader_)
+    {
+        ssgiShader_->Release();
+        ssgiShader_ = nullptr;
+    }
+    if (ssrShader_)
+    {
+        ssrShader_->Release();
+        ssrShader_ = nullptr;
+    }
+    if (deferredLightShader_)
+    {
+        deferredLightShader_->Release();
+        deferredLightShader_ = nullptr;
     }
     if (ssaoBlurVShader_)
     {

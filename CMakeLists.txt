@@ -27,6 +27,7 @@ add_library(ksge_engine STATIC
     engine/graphics/postprocess.cpp
     engine/graphics/renderer.cpp
     engine/graphics/shader_compiler.cpp
+    engine/graphics/shadow_cascade.cpp
     engine/platform/input.cpp
     engine/platform/window.cpp
     engine/scene/camera.cpp

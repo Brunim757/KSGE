@@ -2,7 +2,9 @@
 
 #include "engine/graphics/mesh_upload.hpp"
 #include "engine/graphics/postprocess.hpp"
+#include "engine/graphics/shadow_cascade.hpp"
 #include "engine/graphics/shader_compiler.hpp"
+#include "engine/scene/camera.hpp"
 #include "engine/shaders/shaders_storage.hpp"
 
 #include <cmath>
@@ -48,19 +50,19 @@ void testShaderSourcesCompile()
         bytecode->Release();
         bytecode = nullptr;
     }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kPbrPixel, "main", "ps_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kGBufferPixel, "main", "ps_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
         bytecode = nullptr;
     }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kSkyVertex, "main", "vs_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kShadowVertex, "main", "vs_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
         bytecode = nullptr;
     }
-    CHECK(ksge::compileShaderSource(ksge::shaders::kSkyPixel, "main", "ps_5_0", bytecode, error));
+    CHECK(ksge::compileShaderSource(ksge::shaders::kShadowPixel, "main", "ps_5_0", bytecode, error));
     if (bytecode)
     {
         bytecode->Release();
@@ -82,6 +84,10 @@ void testPostProcessShadersCompile()
 
     const char* bodies[] = {
         ksge::shaders::kPostCopyBody,
+        ksge::shaders::kDeferredLightBody,
+        ksge::shaders::kSsrBody,
+        ksge::shaders::kSsgiBody,
+        ksge::shaders::kSkyPostBody,
         ksge::shaders::kSsaoBody,
         ksge::shaders::kSsaoBlurHBody,
         ksge::shaders::kSsaoBlurVBody,
@@ -174,6 +180,60 @@ void testGradingLutSaturation()
     CHECK(g > b - 1.0e-4f && g < b + 1.0e-4f);
 }
 
+void testCascadeSplits()
+{
+    float splits[ksge::kShadowCascades + 1u];
+    ksge::computeCascadeSplits(0.1f, 1000.0f, splits);
+    CHECK(splits[0] > 0.09f);
+    CHECK(splits[1] > splits[0]);
+    CHECK(splits[2] > splits[1]);
+    CHECK(splits[3] > splits[2]);
+    CHECK(splits[3] > 990.0f);
+}
+
+void testCascadeMatrices()
+{
+    ksge::Transform transform;
+    transform.position = {0.0f, 0.0f, 0.0f};
+    transform.rotation = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    ksge::Camera camera;
+    camera.fovYDegrees = 60.0f;
+    camera.aspectRatio = 16.0f / 9.0f;
+    camera.nearPlane = 0.1f;
+    camera.farPlane = 1000.0f;
+
+    ksge::CameraFrame frame;
+    ksge::cameraFrame(transform, camera, frame);
+
+    float splits[ksge::kShadowCascades + 1u];
+    ksge::computeCascadeSplits(0.1f, 1000.0f, splits);
+
+    const DirectX::XMFLOAT3 lightDirection = {0.5f, 0.8f, 0.6f};
+    DirectX::XMFLOAT4X4 matrices[ksge::kShadowCascades];
+    ksge::computeCascadeMatrices(frame, lightDirection, 0.1f, 1000.0f, splits, matrices);
+
+    const float tanHalfFov = std::tan(ksge::math::radians(30.0f));
+    for (std::uint32_t cascade = 0u; cascade < ksge::kShadowCascades; ++cascade)
+    {
+        const float depth = (splits[cascade] + splits[cascade + 1u]) * 0.5f;
+        const float halfY = depth * tanHalfFov;
+        const float halfX = halfY * camera.aspectRatio;
+        const DirectX::XMMATRIX matrix = ksge::math::load(matrices[cascade]);
+        const DirectX::XMVECTOR point = DirectX::XMVectorSet(halfX, halfY, -depth, 1.0f);
+        const DirectX::XMVECTOR projected = DirectX::XMVector3Transform(point, matrix);
+        const float w = DirectX::XMVectorGetW(projected);
+        if (w < 1.0e-5f)
+        {
+            continue;
+        }
+        const float ndcX = DirectX::XMVectorGetX(projected) / w;
+        const float ndcY = DirectX::XMVectorGetY(projected) / w;
+        CHECK(ndcX >= -1.5f && ndcX <= 1.5f);
+        CHECK(ndcY >= -1.5f && ndcY <= 1.5f);
+    }
+}
+
 void testPrepareTriangle()
 {
     ksge::MeshData triangle;
@@ -245,6 +305,8 @@ int runGraphicsTests()
 {
     testShaderSourcesCompile();
     testPostProcessShadersCompile();
+    testCascadeSplits();
+    testCascadeMatrices();
     testGradingLutIdentity();
     testGradingLutContrast();
     testGradingLutSaturation();

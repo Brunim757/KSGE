@@ -12,6 +12,7 @@
 #include "engine/graphics/device.hpp"
 #include "engine/graphics/mesh_upload.hpp"
 #include "engine/graphics/postprocess.hpp"
+#include "engine/graphics/shadow_cascade.hpp"
 #include "engine/scene/components.hpp"
 
 namespace ksge {
@@ -56,28 +57,29 @@ private:
         std::uint32_t meshIndex,
         const DirectX::XMMATRIX& world,
         const PbrMaterial& material);
-    void drawSky();
+    void drawShadowMesh(std::uint32_t meshIndex, const DirectX::XMMATRIX& world);
+    void drawShadowCasters();
+    void drawGBufferPass();
 
     GraphicsDevice& device_;
     ID3D11Device* d3d_;
     ID3D11DeviceContext* context_;
     flecs::world& world_;
 
-    ID3D11VertexShader* pbrVertexShader_ = nullptr;
-    ID3D11PixelShader* pbrPixelShader_ = nullptr;
-    ID3D11VertexShader* skyVertexShader_ = nullptr;
-    ID3D11PixelShader* skyPixelShader_ = nullptr;
+    ID3D11VertexShader* gbufferVertexShader_ = nullptr;
+    ID3D11PixelShader* gbufferPixelShader_ = nullptr;
+    ID3D11VertexShader* shadowVertexShader_ = nullptr;
+    ID3D11PixelShader* shadowPixelShader_ = nullptr;
     ID3D11InputLayout* inputLayout_ = nullptr;
 
     ID3D11Buffer* sceneBuffer_ = nullptr;
     ID3D11Buffer* objectBuffer_ = nullptr;
-    ID3D11Buffer* skyBuffer_ = nullptr;
+    ID3D11Buffer* shadowBuffer_ = nullptr;
 
     ID3D11SamplerState* linearSampler_ = nullptr;
     ID3D11RasterizerState* solidState_ = nullptr;
     ID3D11RasterizerState* doubleSidedState_ = nullptr;
     ID3D11DepthStencilState* depthState_ = nullptr;
-    ID3D11DepthStencilState* skyDepthState_ = nullptr;
     ID3D11BlendState* opaqueBlendState_ = nullptr;
 
     ID3D11ShaderResourceView* defaultBaseSrv_ = nullptr;
@@ -87,7 +89,8 @@ private:
 
     std::vector<GpuMesh> meshes_;
     std::vector<GpuTexture> textures_;
-    std::uint32_t skyMesh_ = ~0u;
+
+    DirectX::XMFLOAT4X4 shadowViewProjection_[kShadowCascades];
 
     PostProcess postProcess_;
     std::uint32_t debugMode_ = 0u;

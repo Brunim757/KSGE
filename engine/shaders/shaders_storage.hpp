@@ -56,7 +56,7 @@ VSOut main(VSIn input)
 }
 )";
 
-inline constexpr const char* kPbrPixel = R"(
+inline constexpr const char* kGBufferPixel = R"(
 Texture2D gBaseTexture : register(t0);
 Texture2D gMRTexture : register(t1);
 Texture2D gNormalTexture : register(t2);
@@ -73,16 +73,6 @@ struct VSOut
     float4 tangent : TANGENT;
 };
 
-cbuffer SceneCB : register(b0)
-{
-    row_major float4x4 gViewProj;
-    float4 gCamPos;
-    float4 gSunDir;
-    float4 gSunColor;
-    float4 gSkyTop;
-    float4 gSkyHorizon;
-};
-
 cbuffer ObjectCB : register(b1)
 {
     row_major float4x4 gWorld;
@@ -92,32 +82,14 @@ cbuffer ObjectCB : register(b1)
     float4 gHasTextures;
 };
 
-float distributionGGX(float nDotH, float roughness)
+struct GBufferOut
 {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float denom = nDotH * nDotH * (a2 - 1.0) + 1.0;
-    return a2 / max(3.14159265 * denom * denom, 1e-5);
-}
+    float4 color : SV_Target0;
+    float4 normal : SV_Target1;
+    float4 data : SV_Target2;
+};
 
-float geometrySchlickGGX(float nDotV, float roughness)
-{
-    float r = roughness + 1.0;
-    float k = r * r / 8.0;
-    return nDotV / max(nDotV * (1.0 - k) + k, 1e-5);
-}
-
-float geometrySmith(float nDotV, float nDotL, float roughness)
-{
-    return geometrySchlickGGX(nDotV, roughness) * geometrySchlickGGX(nDotL, roughness);
-}
-
-float3 fresnelSchlick(float cosTheta, float3 f0)
-{
-    return f0 + (1.0 - f0) * pow(1.0 - saturate(cosTheta), 5.0);
-}
-
-float4 main(VSOut input) : SV_Target
+GBufferOut main(VSOut input)
 {
     float hasBase = gHasTextures.x;
     float hasMR = gHasTextures.y;
@@ -147,99 +119,47 @@ float4 main(VSOut input) : SV_Target
     float4 emissiveSample = gEmissiveTexture.Sample(gSampler, input.uv);
     float3 emissive = gEmissive.xyz * lerp(float3(1.0, 1.0, 1.0), emissiveSample.xyz, 1.0);
 
-    float3 viewDir = normalize(gCamPos.xyz - input.world);
-    float3 lightDir = normalize(gSunDir.xyz);
-
-    float3 f0 = lerp(float3(0.04, 0.04, 0.04), baseColor.xyz, metallic);
-    float3 halfDir = normalize(lightDir + viewDir);
-
-    float nDotL = saturate(dot(normal, lightDir));
-    float nDotV = saturate(dot(normal, viewDir));
-    float nDotH = saturate(dot(normal, halfDir));
-
-    float ndf = distributionGGX(nDotH, roughness);
-    float geometry = geometrySmith(nDotV, nDotL, roughness);
-    float3 fresnel = fresnelSchlick(nDotH, f0);
-
-    float3 specular = ndf * geometry * fresnel / max(4.0 * nDotV * nDotL, 1e-4);
-    float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * baseColor.xyz / 3.14159265;
-
-    float3 direct = (diffuse + specular) * gSunColor.xyz * nDotL * gSunColor.w;
-
-    float3 ambient = lerp(gSkyHorizon.xyz, gSkyTop.xyz, saturate(normal.y * 0.5 + 0.5));
-    float3 indirect = ambient * baseColor.xyz * ao;
-
-    float3 result = direct + indirect + emissive;
-    return float4(result, baseColor.a);
-}
-)";
-
-inline constexpr const char* kSkyVertex = R"(
-struct VSIn
-{
-    float3 position : POSITION;
-    float3 normal : NORMAL;
-    float2 uv : TEXCOORD;
-    float4 tangent : TANGENT;
-};
-
-struct VSOut
-{
-    float4 position : SV_Position;
-    float3 world : WORLD;
-};
-
-cbuffer SkyCB : register(b0)
-{
-    row_major float4x4 gViewProj;
-    float4 gCamPos;
-    float4 gSunDir;
-    float4 gSkyTop;
-    float4 gSkyHorizon;
-};
-
-VSOut main(VSIn input)
-{
-    float3 world = input.position;
-
-    VSOut output;
-    output.position = mul(float4(world, 1.0), gViewProj).xyww;
-    output.world = input.position;
+    GBufferOut output;
+    output.color = float4(baseColor.xyz, metallic);
+    output.normal = float4(normal * 0.5 + 0.5, roughness);
+    output.data = float4(emissive, ao);
     return output;
 }
 )";
 
-inline constexpr const char* kSkyPixel = R"(
-struct VSOut
+inline constexpr const char* kShadowVertex = R"(
+struct VSIn
+{
+    float3 position : POSITION;
+};
+
+cbuffer ShadowCB : register(b0)
+{
+    row_major float4x4 gLightViewProj;
+};
+
+cbuffer ObjectCB : register(b1)
+{
+    row_major float4x4 gWorld;
+};
+
+VSOut
 {
     float4 position : SV_Position;
-    float3 world : WORLD;
 };
 
-cbuffer SkyCB : register(b0)
+VSOut main(VSIn input)
 {
-    row_major float4x4 gViewProj;
-    float4 gCamPos;
-    float4 gSunDir;
-    float4 gSkyTop;
-    float4 gSkyHorizon;
-};
+    VSOut output;
+    output.position = mul(float4(input.position, 1.0), mul(gWorld, gLightViewProj));
+    return output;
+}
+)";
 
-float4 main(VSOut input) : SV_Target
+inline constexpr const char* kShadowPixel = R"(
+float4 main() : SV_Target
 {
-    float3 direction = normalize(input.world);
-    float up = saturate(direction.y);
-    float skyMix = smoothstep(-0.2, 0.5, direction.y);
-    float3 sky = lerp(gSkyHorizon.xyz, gSkyTop.xyz, skyMix);
-
-    float sunAmount = pow(max(dot(direction, normalize(gSunDir.xyz)), 0.0), 96.0);
-    float3 sunGlow = gSkyTop.xyz * sunAmount * 2.0;
-    sunGlow += pow(max(dot(direction, normalize(gSunDir.xyz)), 0.0), 8.0) * gSkyHorizon.xyz * 0.15;
-
-    float horizonGlow = pow(1.0 - min(abs(direction.y), 1.0), 3.0);
-    sky += (gSkyHorizon.xyz * 0.35) * horizonGlow;
-
-    return float4(sky + sunGlow, 1.0);
+    return float4(0.0, 0.0, 0.0, 1.0);
 }
 )";
 
@@ -278,10 +198,15 @@ cbuffer PostCB : register(b0)
     float4 gCamNearFar;
     float4 gSun;
     float4 gSunColor;
+    float4 gSkyTop;
+    float4 gSkyHorizon;
     float4 gFogParams;
     float4 gSsaoParams;
     float4 gBloomParams;
+    float4 gShadowSplits;
+    float4 gShadowParams;
     float4 gCompositeParams;
+    row_major float4x4 gShadowViewProj[3];
 };
 
 float3 reconstructWorld(float2 uv, float depth)
@@ -294,6 +219,53 @@ float3 reconstructWorld(float2 uv, float depth)
 bool finiteValue(float x)
 {
     return x * 0.0 == 0.0 && x == x;
+}
+
+float linearViewDepth(float depth)
+{
+    return (gCamNearFar.x * gCamNearFar.y) /
+        max(gCamNearFar.y - depth * (gCamNearFar.y - gCamNearFar.x), 1e-5);
+}
+
+float distributionGGX(float nDotH, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = nDotH * nDotH * (a2 - 1.0) + 1.0;
+    return a2 / max(3.14159265 * denom * denom, 1e-5);
+}
+
+float geometrySchlickGGX(float nDotV, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = r * r / 8.0;
+    return nDotV / max(nDotV * (1.0 - k) + k, 1e-5);
+}
+
+float geometrySmith(float nDotV, float nDotL, float roughness)
+{
+    return geometrySchlickGGX(nDotV, roughness) * geometrySchlickGGX(nDotL, roughness);
+}
+
+float3 fresnelSchlick(float cosTheta, float3 f0)
+{
+    return f0 + (1.0 - f0) * pow(1.0 - saturate(cosTheta), 5.0);
+}
+
+float3 skyGradientColor(float3 direction)
+{
+    float up = saturate(direction.y);
+    float skyMix = smoothstep(-0.2, 0.5, direction.y);
+    float3 sky = lerp(gSkyHorizon.xyz, gSkyTop.xyz, skyMix);
+
+    float sunAmount = pow(max(dot(direction, normalize(gSun.xyz)), 0.0), 96.0);
+    float3 sunGlow = gSkyTop.xyz * sunAmount * 2.0;
+    sunGlow += pow(max(dot(direction, normalize(gSun.xyz)), 0.0), 8.0) * gSkyHorizon.xyz * 0.15;
+
+    float horizonGlow = pow(1.0 - min(abs(direction.y), 1.0), 3.0);
+    sky += (gSkyHorizon.xyz * 0.35) * horizonGlow;
+
+    return sky + sunGlow;
 }
 )";
 
@@ -496,6 +468,285 @@ float4 main(VSOut input) : SV_Target
 }
 )";
 
+inline constexpr const char* kDeferredLightBody = R"(
+Texture2D gBufA : register(t0);
+Texture2D gBufB : register(t1);
+Texture2D gBufC : register(t2);
+Texture2D gDepth : register(t3);
+Texture2D gSsao : register(t4);
+Texture2D gShadowMap0 : register(t5);
+Texture2D gShadowMap1 : register(t6);
+Texture2D gShadowMap2 : register(t7);
+SamplerState gPointSampler : register(s0);
+SamplerState gLinearSampler : register(s1);
+SamplerComparisonState gShadowSampler : register(s2);
+
+float sampleShadowCascade(uint cascade, float3 worldPos)
+{
+    float4 projected = mul(float4(worldPos, 1.0), gShadowViewProj[cascade]);
+    projected.xy /= max(projected.w, 1e-5);
+    if (any(projected.xy <= -1.0) || any(projected.xy >= 1.0) || projected.w <= 0.0)
+    {
+        return 1.0;
+    }
+    float2 uv = projected.xy * 0.5 + 0.5;
+    uv.y = 1.0 - uv.y;
+    float reference = projected.z - gShadowParams.z;
+    float shadowed = 0.0;
+    [unroll]
+    for (int row = -2; row <= 2; ++row)
+    {
+        [unroll]
+        for (int column = -2; column <= 2; ++column)
+        {
+            float2 offset = (float2(float(column), float(row)) + 0.5) * gShadowParams.xy;
+            if (cascade == 0u)
+            {
+                shadowed += gShadowMap0.SampleCmpLevelZero(gShadowSampler, uv + offset, reference);
+            }
+            else if (cascade == 1u)
+            {
+                shadowed += gShadowMap1.SampleCmpLevelZero(gShadowSampler, uv + offset, reference);
+            }
+            else
+            {
+                shadowed += gShadowMap2.SampleCmpLevelZero(gShadowSampler, uv + offset, reference);
+            }
+        }
+    }
+    return 1.0 - shadowed / 25.0;
+}
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+    if (depth >= 1.0)
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float3 worldPos = reconstructWorld(input.uv, depth);
+    if (!finiteValue(worldPos.x) || !finiteValue(worldPos.y) || !finiteValue(worldPos.z))
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float4 bufferA = gBufA.Sample(gLinearSampler, input.uv);
+    float4 bufferB = gBufB.Sample(gLinearSampler, input.uv);
+    float4 bufferC = gBufC.Sample(gLinearSampler, input.uv);
+
+    float3 albedo = bufferA.rgb;
+    float metallic = bufferA.a;
+    float3 normal = normalize(bufferB.xyz * 2.0 - 1.0);
+    float roughness = bufferB.a;
+    float3 emissive = bufferC.rgb;
+    float occlusion = bufferC.a;
+    if (length(normal) < 0.5)
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float3 viewDir = normalize(gCameraPos.xyz - worldPos);
+    float3 lightDir = normalize(gSun.xyz);
+
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+    float3 halfDir = normalize(lightDir + viewDir);
+
+    float nDotL = saturate(dot(normal, lightDir));
+    float nDotV = saturate(dot(normal, viewDir));
+    float nDotH = saturate(dot(normal, halfDir));
+
+    float ndf = distributionGGX(nDotH, roughness);
+    float geometry = geometrySmith(nDotV, nDotL, roughness);
+    float3 fresnel = fresnelSchlick(nDotH, f0);
+
+    float3 specular = ndf * geometry * fresnel / max(4.0 * nDotV * nDotL, 1e-4);
+    float3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * albedo / 3.14159265;
+
+    float linearDepth = linearViewDepth(depth);
+    uint cascade = 2u;
+    if (linearDepth < gShadowSplits.x)
+    {
+        cascade = 0u;
+    }
+    else if (linearDepth < gShadowSplits.y)
+    {
+        cascade = 1u;
+    }
+    float light = sampleShadowCascade(cascade, worldPos);
+    float splitHi = cascade == 0u ? gShadowSplits.x : gShadowSplits.y;
+    float cascadeBlend = smoothstep(splitHi - gShadowParams.w, splitHi, linearDepth);
+    if (cascade < 2u && cascadeBlend > 0.001)
+    {
+        float layer = sampleShadowCascade(cascade + 1u, worldPos);
+        light = lerp(light, layer, cascadeBlend);
+    }
+
+    float3 direct = (diffuse + specular) * (gSunColor.xyz * nDotL * gSun.w) * light;
+
+    float ao = gSsao.Sample(gLinearSampler, input.uv).r;
+    float3 ambient = lerp(gSkyHorizon.xyz, gSkyTop.xyz, saturate(normal.y * 0.5 + 0.5)) * albedo * ao;
+
+    return float4(direct + ambient + emissive, 1.0);
+}
+)";
+
+inline constexpr const char* kSsrBody = R"(
+Texture2D gScene : register(t0);
+Texture2D gBufA : register(t1);
+Texture2D gBufB : register(t2);
+Texture2D gDepth : register(t3);
+SamplerState gPointSampler : register(s0);
+SamplerState gLinearSampler : register(s1);
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+    if (depth >= 1.0)
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float3 worldPos = reconstructWorld(input.uv, depth);
+    float3 normal = normalize(gBufB.Sample(gLinearSampler, input.uv).xyz * 2.0 - 1.0);
+    float roughness = gBufB.Sample(gLinearSampler, input.uv).a;
+    float metallic = gBufA.Sample(gLinearSampler, input.uv).a;
+    float3 albedo = gBufA.Sample(gLinearSampler, input.uv).rgb;
+    if (length(normal) < 0.5)
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float3 viewDir = normalize(gCameraPos.xyz - worldPos);
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+    float reflectivity = saturate(length(fresnelSchlick(dot(normal, viewDir), f0)));
+    float smoothness = saturate(1.0 - roughness);
+    float weight = reflectivity * smoothness;
+    if (weight < 0.02)
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float3 ray = normalize(reflect(-viewDir, normal));
+    float stepLength = max(length(worldPos - gCameraPos.xyz) * 0.02, 0.05);
+
+    float3 fallback = skyGradientColor(ray);
+    float3 reflection = float3(0.0, 0.0, 0.0);
+    float fade = 0.0;
+
+    for (uint i = 0u; i < 24u; ++i)
+    {
+        float3 samplePoint = worldPos + ray * (stepLength * float(i + 1u));
+        float4 projected = mul(float4(samplePoint, 1.0), gViewProj);
+        projected.xy /= max(projected.w, 1e-5);
+        float2 sampleUv = projected.xy * 0.5 + 0.5;
+        sampleUv.y = 1.0 - sampleUv.y;
+        if ((projected.w <= 0.0) || any(sampleUv <= 0.0) || any(sampleUv >= 1.0))
+        {
+            break;
+        }
+        float hitDepth = gDepth.Sample(gPointSampler, sampleUv).r;
+        if (hitDepth >= 1.0)
+        {
+            break;
+        }
+        float3 hitWorld = reconstructWorld(sampleUv, hitDepth);
+        float hitDistance = length(hitWorld - gCameraPos.xyz);
+        float rayDistance = length(samplePoint - gCameraPos.xyz);
+        if (hitDistance < rayDistance - 0.05)
+        {
+            float horizontal = 1.0 - smoothstep(0.55, 0.85, abs(sampleUv.x - 0.5) * 2.0);
+            float vertical = 1.0 - smoothstep(0.55, 0.85, abs(sampleUv.y - 0.5) * 2.0);
+            reflection = gScene.Sample(gLinearSampler, sampleUv).rgb;
+            fade = (1.0 - float(i) / 24.0) * min(horizontal, vertical);
+            break;
+        }
+    }
+
+    float3 result = fade > 0.001 ? reflection * fade : fallback * 0.25 * smoothstep(0.0, 0.3, smoothness);
+    return float4(result * weight, 1.0);
+}
+)";
+
+inline constexpr const char* kSsgiBody = R"(
+Texture2D gScene : register(t0);
+Texture2D gBufA : register(t1);
+Texture2D gBufB : register(t2);
+Texture2D gDepth : register(t3);
+SamplerState gPointSampler : register(s0);
+SamplerState gLinearSampler : register(s1);
+
+static const float2 gSsgiOffsets[8] = {
+    float2(1.0, 0.0),
+    float2(-1.0, 0.0),
+    float2(0.0, 1.0),
+    float2(0.0, -1.0),
+    float2(0.707, 0.707),
+    float2(0.707, -0.707),
+    float2(-0.707, 0.707),
+    float2(-0.707, -0.707),
+};
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+    if (depth >= 1.0)
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float3 worldPos = reconstructWorld(input.uv, depth);
+    float3 normal = normalize(gBufB.Sample(gLinearSampler, input.uv).xyz * 2.0 - 1.0);
+    float3 albedo = gBufA.Sample(gLinearSampler, input.uv).rgb;
+    float metallic = gBufA.Sample(gLinearSampler, input.uv).a;
+    float3 albedoFactor = albedo * (1.0 - metallic);
+
+    float centerDepth = linearViewDepth(depth);
+    float radiusPixels = clamp(centerDepth * 0.02, 2.0, 16.0);
+    float2 texel = gTargetSize.zw;
+
+    float3 indirect = float3(0.0, 0.0, 0.0);
+    float totalWeight = 0.0;
+    for (uint i = 0u; i < 8u; ++i)
+    {
+        float2 offset = gSsgiOffsets[i] * radiusPixels * texel;
+        float2 sampleUv = input.uv + offset;
+        if (any(sampleUv <= 0.0) || any(sampleUv >= 1.0))
+        {
+            continue;
+        }
+        float sampleDepthRaw = gDepth.Sample(gPointSampler, sampleUv).r;
+        if (sampleDepthRaw >= 1.0)
+        {
+            continue;
+        }
+        float sampleDepth = linearViewDepth(sampleDepthRaw);
+        float weight = 1.0 - saturate(abs(sampleDepth - centerDepth) / max(centerDepth * 0.25, 0.5));
+        indirect += gScene.Sample(gLinearSampler, sampleUv).rgb * weight;
+        totalWeight += weight;
+    }
+
+    float3 result = totalWeight > 1e-4 ? indirect / totalWeight : float3(0.0, 0.0, 0.0);
+    return float4(result * albedoFactor * 0.35, 1.0);
+}
+)";
+
+inline constexpr const char* kSkyPostBody = R"(
+Texture2D gDepth : register(t0);
+SamplerState gPointSampler : register(s0);
+
+float4 main(VSOut input) : SV_Target
+{
+    float depth = gDepth.Sample(gPointSampler, input.uv).r;
+    if (depth < 1.0 - 1e-4)
+    {
+        discard;
+    }
+    float3 direction = normalize(reconstructWorld(input.uv, 1.0) - gCameraPos.xyz);
+    return float4(skyGradientColor(direction), 1.0);
+}
+)";
+
 inline constexpr const char* kBloomExtractBody = R"(
 Texture2D gScene : register(t0);
 SamplerState gLinearSampler : register(s1);
@@ -601,6 +852,8 @@ Texture2D gBloomBase : register(t3);
 Texture2D gBloomAccum : register(t4);
 Texture3D gLut : register(t5);
 Texture2D gDepth : register(t6);
+Texture2D gSsr : register(t7);
+Texture2D gSsgi : register(t8);
 SamplerState gPointSampler : register(s0);
 SamplerState gLinearSampler : register(s1);
 
@@ -645,9 +898,10 @@ float4 main(VSOut input) : SV_Target
     }
 
     float3 color = scene;
-    color *= 1.0 - (1.0 - ao) * saturate(gCompositeParams.x);
+    color += gSsgi.Sample(gLinearSampler, input.uv).rgb * gCompositeParams.x;
+    color += gSsr.Sample(gLinearSampler, input.uv).rgb * gCompositeParams.y;
     color = color * (1.0 - (1.0 - fog.a) * gCompositeParams.z) + fog.rgb * gCompositeParams.z;
-    color += bloom * gCompositeParams.y;
+    color += bloom * gBloomParams.z;
     color = acesToneMap(color);
     color = gLut.Sample(gLinearSampler, saturate(color)).xyz;
     color = pow(color, 1.0 / 2.2);

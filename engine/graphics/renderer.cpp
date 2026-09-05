@@ -44,30 +44,15 @@ struct ObjectConstants
     DirectX::XMFLOAT4 hasTextures;
 };
 
-struct SkyConstants
+struct ShadowConstants
 {
-    DirectX::XMFLOAT4X4 viewProjection;
-    DirectX::XMFLOAT4 camPosition;
-    DirectX::XMFLOAT4 sunDirection;
-    DirectX::XMFLOAT4 skyTop;
-    DirectX::XMFLOAT4 skyHorizon;
+    DirectX::XMFLOAT4X4 lightViewProjection;
 };
 
-DirectX::XMFLOAT4X4 makeSkyViewProj(const CameraFrame& frame)
+struct ShadowObjectConstants
 {
-    DirectX::XMMATRIX view = math::load(frame.view);
-    DirectX::XMFLOAT4X4 stored;
-    math::store(stored, view);
-    stored._41 = 0.0f;
-    stored._42 = 0.0f;
-    stored._43 = 0.0f;
-    stored._44 = 1.0f;
-    const DirectX::XMMATRIX combined =
-        math::load(stored) * math::load(frame.projection);
-    DirectX::XMFLOAT4X4 result;
-    math::store(result, combined);
-    return result;
-}
+    DirectX::XMFLOAT4X4 world;
+};
 
 }
 
@@ -86,7 +71,6 @@ Renderer::Renderer(GraphicsDevice& device, flecs::world& world)
     createPipeline();
     createStates();
     createDefaultTextures();
-    skyMesh_ = uploadMesh(makeCube(12000.0f));
 }
 
 Renderer::~Renderer()
@@ -133,10 +117,6 @@ Renderer::~Renderer()
     {
         opaqueBlendState_->Release();
     }
-    if (skyDepthState_)
-    {
-        skyDepthState_->Release();
-    }
     if (depthState_)
     {
         depthState_->Release();
@@ -153,9 +133,13 @@ Renderer::~Renderer()
     {
         linearSampler_->Release();
     }
-    if (skyBuffer_)
+    if (shadowWorldBuffer_)
     {
-        skyBuffer_->Release();
+        shadowWorldBuffer_->Release();
+    }
+    if (shadowBuffer_)
+    {
+        shadowBuffer_->Release();
     }
     if (objectBuffer_)
     {
@@ -169,21 +153,21 @@ Renderer::~Renderer()
     {
         inputLayout_->Release();
     }
-    if (skyPixelShader_)
+    if (shadowPixelShader_)
     {
-        skyPixelShader_->Release();
+        shadowPixelShader_->Release();
     }
-    if (skyVertexShader_)
+    if (shadowVertexShader_)
     {
-        skyVertexShader_->Release();
+        shadowVertexShader_->Release();
     }
-    if (pbrPixelShader_)
+    if (gbufferPixelShader_)
     {
-        pbrPixelShader_->Release();
+        gbufferPixelShader_->Release();
     }
-    if (pbrVertexShader_)
+    if (gbufferVertexShader_)
     {
-        pbrVertexShader_->Release();
+        gbufferVertexShader_->Release();
     }
 }
 
@@ -192,11 +176,11 @@ void Renderer::createPipeline()
     std::string error;
 
     ID3DBlob* vertexBytecode = nullptr;
-    if (!createVertexShader(d3d_, shaders::kPbrVertex, pbrVertexShader_, vertexBytecode, error) ||
-        !createPixelShader(d3d_, shaders::kPbrPixel, pbrPixelShader_, error))
+    if (!createVertexShader(d3d_, shaders::kPbrVertex, gbufferVertexShader_, vertexBytecode, error) ||
+        !createPixelShader(d3d_, shaders::kGBufferPixel, gbufferPixelShader_, error))
     {
-        pbrVertexShader_ = nullptr;
-        pbrPixelShader_ = nullptr;
+        gbufferVertexShader_ = nullptr;
+        gbufferPixelShader_ = nullptr;
         if (vertexBytecode)
         {
             vertexBytecode->Release();
@@ -222,43 +206,46 @@ void Renderer::createPipeline()
     }
     vertexBytecode->Release();
 
-    if (!createVertexShader(d3d_, shaders::kSkyVertex, skyVertexShader_, vertexBytecode, error) ||
-        !createPixelShader(d3d_, shaders::kSkyPixel, skyPixelShader_, error))
+    ID3DBlob* shadowBytecode = nullptr;
+    if (!createVertexShader(d3d_, shaders::kShadowVertex, shadowVertexShader_, shadowBytecode, error) ||
+        !createPixelShader(d3d_, shaders::kShadowPixel, shadowPixelShader_, error))
     {
-        skyVertexShader_ = nullptr;
-        skyPixelShader_ = nullptr;
-        if (vertexBytecode)
-        {
-            vertexBytecode->Release();
-        }
+        shadowVertexShader_ = nullptr;
+        shadowPixelShader_ = nullptr;
     }
-    if (vertexBytecode)
+    if (shadowBytecode)
     {
-        vertexBytecode->Release();
+        shadowBytecode->Release();
     }
 
-     D3D11_BUFFER_DESC sceneDesc = {};
+    D3D11_BUFFER_DESC sceneDesc = {};
     sceneDesc.ByteWidth = sizeof(SceneConstants);
     sceneDesc.Usage = D3D11_USAGE_DEFAULT;
     sceneDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     d3d_->CreateBuffer(&sceneDesc, nullptr, &sceneBuffer_);
 
-     D3D11_BUFFER_DESC objectDesc = {};
+    D3D11_BUFFER_DESC objectDesc = {};
     objectDesc.ByteWidth = sizeof(ObjectConstants);
     objectDesc.Usage = D3D11_USAGE_DEFAULT;
     objectDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     d3d_->CreateBuffer(&objectDesc, nullptr, &objectBuffer_);
 
-     D3D11_BUFFER_DESC skyDesc = {};
-    skyDesc.ByteWidth = sizeof(SkyConstants);
-    skyDesc.Usage = D3D11_USAGE_DEFAULT;
-    skyDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    d3d_->CreateBuffer(&skyDesc, nullptr, &skyBuffer_);
+    D3D11_BUFFER_DESC shadowDesc = {};
+    shadowDesc.ByteWidth = sizeof(ShadowConstants);
+    shadowDesc.Usage = D3D11_USAGE_DEFAULT;
+    shadowDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    d3d_->CreateBuffer(&shadowDesc, nullptr, &shadowBuffer_);
+
+    D3D11_BUFFER_DESC shadowWorldDesc = {};
+    shadowWorldDesc.ByteWidth = sizeof(ShadowObjectConstants);
+    shadowWorldDesc.Usage = D3D11_USAGE_DEFAULT;
+    shadowWorldDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    d3d_->CreateBuffer(&shadowWorldDesc, nullptr, &shadowWorldBuffer_);
 }
 
 void Renderer::createStates()
 {
-     D3D11_SAMPLER_DESC samplerDesc = {};
+    D3D11_SAMPLER_DESC samplerDesc = {};
     samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
     samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
     samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
@@ -266,7 +253,7 @@ void Renderer::createStates()
     samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
     d3d_->CreateSamplerState(&samplerDesc, &linearSampler_);
 
-D3D11_RASTERIZER_DESC solidDesc = {};
+    D3D11_RASTERIZER_DESC solidDesc = {};
     solidDesc.FillMode = D3D11_FILL_SOLID;
     solidDesc.CullMode = D3D11_CULL_NONE;
     solidDesc.FrontCounterClockwise = TRUE;
@@ -277,19 +264,13 @@ D3D11_RASTERIZER_DESC solidDesc = {};
     const D3D11_RASTERIZER_DESC doubleSidedDesc = solidDesc;
     d3d_->CreateRasterizerState(&doubleSidedDesc, &doubleSidedState_);
 
-     D3D11_DEPTH_STENCIL_DESC depthDesc = {};
+    D3D11_DEPTH_STENCIL_DESC depthDesc = {};
     depthDesc.DepthEnable = TRUE;
     depthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
     depthDesc.DepthFunc = D3D11_COMPARISON_LESS;
     d3d_->CreateDepthStencilState(&depthDesc, &depthState_);
 
-     D3D11_DEPTH_STENCIL_DESC skyDepthDesc = {};
-    skyDepthDesc.DepthEnable = TRUE;
-    skyDepthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-    skyDepthDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
-    d3d_->CreateDepthStencilState(&skyDepthDesc, &skyDepthState_);
-
-     D3D11_BLEND_DESC blendDesc = {};
+    D3D11_BLEND_DESC blendDesc = {};
     blendDesc.RenderTarget[0].BlendEnable = FALSE;
     blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
     d3d_->CreateBlendState(&blendDesc, &opaqueBlendState_);
@@ -409,17 +390,45 @@ std::uint32_t Renderer::uploadTexture(const TextureData& source)
     return static_cast<std::uint32_t>(textures_.size() - 1u);
 }
 
-void Renderer::render()
+void Renderer::drawShadowCasters()
 {
-    d3d_ = device_.device();
-    context_ = device_.context();
-    if (pbrVertexShader_ == nullptr || pbrPixelShader_ == nullptr)
+    context_->VSSetConstantBuffers(1u, 1u, &shadowWorldBuffer_);
+    context_->IASetInputLayout(inputLayout_);
+    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context_->OMSetDepthStencilState(depthState_, 0u);
+    context_->OMSetBlendState(opaqueBlendState_, nullptr, 0xFFFFFFFFu);
+
+    world_.each([&](Transform& transform, MeshRenderer& meshRenderer, PbrMaterial& material)
+    {
+        const DirectX::XMMATRIX world = worldMatrix(transform);
+        drawShadowMesh(meshRenderer.meshAsset, world, material.doubleSided);
+    });
+}
+
+void Renderer::drawShadowMesh(
+    std::uint32_t meshIndex,
+    const DirectX::XMMATRIX& world,
+    bool doubleSided)
+{
+    if (meshIndex >= meshes_.size() || shadowVertexShader_ == nullptr)
     {
         return;
     }
-    postProcess_.attach(d3d_, context_);
-    postProcess_.beginScene(device_.width(), device_.height());
+    const GpuMesh& mesh = meshes_[meshIndex];
 
+    ShadowObjectConstants object = {};
+    math::store(object.world, world);
+    context_->UpdateSubresource(shadowWorldBuffer_, 0u, nullptr, &object, 0u, 0u);
+
+    context_->RSSetState(doubleSided ? doubleSidedState_ : solidState_);
+
+    context_->IASetVertexBuffers(0u, 1u, &mesh.vertices, &kPreparedStride, &kZeroOffset);
+    context_->IASetIndexBuffer(mesh.indices, DXGI_FORMAT_R32_UINT, 0u);
+    context_->DrawIndexed(mesh.indexCount, 0u, 0);
+}
+
+void Renderer::drawGBufferPass()
+{
     const CameraFrame& frame = world_.get<CameraFrame>();
     const DirectionalLight& light = world_.get<DirectionalLight>();
 
@@ -435,8 +444,8 @@ void Renderer::render()
     context_->UpdateSubresource(sceneBuffer_, 0u, nullptr, &scene, 0u, 0u);
     context_->VSSetConstantBuffers(0u, 1u, &sceneBuffer_);
     context_->PSSetConstantBuffers(0u, 1u, &sceneBuffer_);
-    context_->VSSetShader(pbrVertexShader_, nullptr, 0u);
-    context_->PSSetShader(pbrPixelShader_, nullptr, 0u);
+    context_->VSSetShader(gbufferVertexShader_, nullptr, 0u);
+    context_->PSSetShader(gbufferPixelShader_, nullptr, 0u);
     context_->IASetInputLayout(inputLayout_);
     context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     context_->PSSetSamplers(0u, 1u, &linearSampler_);
@@ -448,8 +457,46 @@ void Renderer::render()
         const DirectX::XMMATRIX world = worldMatrix(transform);
         drawMesh(meshRenderer.meshAsset, world, material);
     });
+}
 
-    drawSky();
+void Renderer::render()
+{
+    d3d_ = device_.device();
+    context_ = device_.context();
+    if (gbufferVertexShader_ == nullptr || gbufferPixelShader_ == nullptr)
+    {
+        return;
+    }
+    postProcess_.attach(d3d_, context_);
+
+    const CameraFrame& frame = world_.get<CameraFrame>();
+    const DirectionalLight& light = world_.get<DirectionalLight>();
+    const flecs::entity cameraEntity = world_.entity("editor_camera");
+    const bool hasCamera = cameraEntity.has<Camera>();
+    const float nearPlane = hasCamera ? cameraEntity.get<Camera>().nearPlane : 0.1f;
+    const float farPlane = hasCamera ? cameraEntity.get<Camera>().farPlane : 5000.0f;
+    const DirectX::XMFLOAT3 camPosition = cameraPosition(world_);
+
+    float cascadeSplits[kShadowCascades + 1u];
+    computeCascadeSplits(nearPlane, farPlane, cascadeSplits);
+    const DirectX::XMFLOAT3 lightDirection = {light.direction.x, light.direction.y, light.direction.z};
+    computeCascadeMatrices(frame, lightDirection, nearPlane, farPlane, cascadeSplits, shadowViewProjection_);
+
+    for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
+    {
+        postProcess_.beginShadowMap(cascade);
+        ShadowConstants shadow = {};
+        shadow.lightViewProjection = shadowViewProjection_[cascade];
+        context_->UpdateSubresource(shadowBuffer_, 0u, nullptr, &shadow, 0u, 0u);
+        context_->VSSetConstantBuffers(0u, 1u, &shadowBuffer_);
+        context_->VSSetShader(shadowVertexShader_, nullptr, 0u);
+        context_->PSSetShader(shadowPixelShader_, nullptr, 0u);
+        drawShadowCasters();
+    }
+    postProcess_.endShadowMap();
+
+    postProcess_.beginScene(device_.width(), device_.height());
+    drawGBufferPass();
     postProcess_.endScene();
 
     PostFrameInfo info = {};
@@ -461,13 +508,21 @@ void Renderer::render()
     const DirectX::XMMATRIX inverse = DirectX::XMMatrixInverse(&determinant, viewProjection);
     math::store(info.inverseViewProjection, inverse);
     info.cameraPosition = {camPosition.x, camPosition.y, camPosition.z};
-    const flecs::entity cameraEntity = world_.entity("editor_camera");
-    const bool hasCamera = cameraEntity.has<Camera>();
-    info.nearPlane = hasCamera ? cameraEntity.get<Camera>().nearPlane : 0.1f;
-    info.farPlane = hasCamera ? cameraEntity.get<Camera>().farPlane : 5000.0f;
+    info.nearPlane = nearPlane;
+    info.farPlane = farPlane;
     info.sunDirection = {light.direction.x, light.direction.y, light.direction.z};
     info.sunIntensity = light.intensity;
     info.sunColor = light.color;
+    for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
+    {
+        info.shadowViewProjection[cascade] = shadowViewProjection_[cascade];
+    }
+    info.cascadeSplits[0] = cascadeSplits[1];
+    info.cascadeSplits[1] = cascadeSplits[2];
+    info.cascadeSplits[2] = cascadeSplits[3];
+    info.shadowMapSize = 1024.0f;
+    info.shadowBlendWidth = 20.0f;
+    info.shadowDepthBias = 0.004f;
     info.exposure = 1.0f;
     info.debugMode = debugMode_;
 
@@ -537,40 +592,6 @@ void Renderer::drawMesh(
     }
 
     context_->IASetVertexBuffers(0u, 1u, &mesh.vertices, &kPreparedStride, &kZeroOffset);
-    context_->IASetIndexBuffer(mesh.indices, DXGI_FORMAT_R32_UINT, 0u);
-    context_->DrawIndexed(mesh.indexCount, 0u, 0);
-}
-
-void Renderer::drawSky()
-{
-    if (skyMesh_ >= meshes_.size() || skyVertexShader_ == nullptr)
-    {
-        return;
-    }
-
-    const CameraFrame& frame = world_.get<CameraFrame>();
-    const DirectionalLight& light = world_.get<DirectionalLight>();
-
-    SkyConstants sky = {};
-    sky.viewProjection = makeSkyViewProj(frame);
-    const DirectX::XMFLOAT3 camPosition = cameraPosition(world_);
-    sky.camPosition = {camPosition.x, camPosition.y, camPosition.z, 1.0f};
-    sky.sunDirection = {light.direction.x, light.direction.y, light.direction.z, 0.0f};
-    sky.skyTop = {0.22f, 0.42f, 0.72f, 1.0f};
-    sky.skyHorizon = {0.55f, 0.63f, 0.70f, 1.0f};
-
-    context_->UpdateSubresource(skyBuffer_, 0u, nullptr, &sky, 0u, 0u);
-    context_->VSSetConstantBuffers(0u, 1u, &skyBuffer_);
-    context_->PSSetConstantBuffers(0u, 1u, &skyBuffer_);
-
-    context_->VSSetShader(skyVertexShader_, nullptr, 0u);
-    context_->PSSetShader(skyPixelShader_, nullptr, 0u);
-    context_->OMSetDepthStencilState(skyDepthState_, 0u);
-    context_->RSSetState(solidState_);
-
-    const GpuMesh& mesh = meshes_[skyMesh_];
-    ID3D11Buffer* vertexBuffers[1] = {mesh.vertices};
-    context_->IASetVertexBuffers(0u, 1u, vertexBuffers, &kPreparedStride, &kZeroOffset);
     context_->IASetIndexBuffer(mesh.indices, DXGI_FORMAT_R32_UINT, 0u);
     context_->DrawIndexed(mesh.indexCount, 0u, 0);
 }
