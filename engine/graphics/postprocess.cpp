@@ -470,9 +470,9 @@ void PostProcess::uploadConstants(std::uint32_t texelWidth, std::uint32_t texelH
     constants.sun = {postSunDir_.x, postSunDir_.y, postSunDir_.z, postSunIntensity_};
     constants.sunColor = {postSunColor_.x, postSunColor_.y, postSunColor_.z, 0.0f};
     constants.fogParams = {0.002f, 0.05f, 0.0f, 0.0f};
-    constants.ssaoParams = {1.5f, 0.8f, static_cast<float>(kSsaoSamples), 0.0f};
+    constants.ssaoParams = {1.2f, 0.8f, static_cast<float>(kSsaoSamples), 0.0f};
     constants.bloomParams = {1.0f, 0.35f, 0.0f, 0.0f};
-    constants.compositeParams = {1.0f, 0.8f, 1.0f, postExposure_};
+    constants.compositeParams = {0.45f, 0.8f, 1.0f, postExposure_};
 
     context_->UpdateSubresource(constants_, 0u, nullptr, &constants, 0u, 0u);
     context_->VSSetConstantBuffers(0u, 1u, &constants_);

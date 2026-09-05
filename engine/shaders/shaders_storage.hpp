@@ -342,18 +342,26 @@ float4 main(VSOut input) : SV_Target
 
     float3 side = cross(right - center, up - center);
     float3 normal = dot(side, side) > 1e-8 ? normalize(side) : float3(0.0, 1.0, 0.0);
+    if (dot(normal, gCameraPos.xyz - center) < 0.0)
+    {
+        normal = -normal;
+    }
 
     float3 random = gNoise.Sample(gPointSampler, input.uv * gTargetSize.xy / 4.0).xyz * 2.0 - 1.0;
     float3 tangent = normalize(random - normal * dot(random, normal));
     float3 bitangent = cross(normal, tangent);
     float3x3 tbn = float3x3(tangent, bitangent, normal);
 
+    float centerDistance = max(length(center - gCameraPos.xyz), 1e-4);
+    float distanceScale = saturate(centerDistance / 25.0);
+    distanceScale = max(distanceScale, 0.15);
+
     float occlusion = 0.0;
     for (uint i = 0u; i < 16u; ++i)
     {
         float scale = (float(i) + 1.0) / 16.0;
         float3 sampleDir = mul(gKernel[i], tbn);
-        float3 samplePos = center + sampleDir * gSsaoParams.x * scale;
+        float3 samplePos = center + sampleDir * gSsaoParams.x * scale * distanceScale;
 
         float4 projected = mul(float4(samplePos, 1.0), gViewProj);
         float2 sampleUv = projected.xy / max(projected.w, 1e-5) * 0.5 + 0.5;
