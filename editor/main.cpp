@@ -30,7 +30,6 @@ bool hasFlag(int argc, char** argv, const char* flag)
 }
 
 void spawnDemoScene(
-    ksge::Renderer& renderer,
     flecs::world& world,
     std::uint32_t floorMesh,
     std::uint32_t sphereMesh,
@@ -94,7 +93,7 @@ int main(int argc, char** argv)
     ksge::Renderer renderer(device, world.handle());
     const std::uint32_t cubeMesh = renderer.uploadMesh(ksge::makeCube(1.0f));
     const std::uint32_t sphereMesh = renderer.uploadMesh(ksge::makeSphere(48u, 24u, 1.0f));
-    spawnDemoScene(renderer, world.handle(), cubeMesh, sphereMesh, cubeMesh);
+    spawnDemoScene(world.handle(), cubeMesh, sphereMesh, cubeMesh);
 
     std::int32_t frameCount = 0;
     while (!window.shouldClose())

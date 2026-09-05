@@ -438,11 +438,10 @@ void Renderer::render()
     context_->OMSetBlendState(opaqueBlendState_, nullptr, 0xFFFFFFFFu);
     context_->OMSetDepthStencilState(depthState_, 0u);
 
-    world_.each([&](flecs::entity entity, Transform& transform, MeshRenderer& renderer,
-                    PbrMaterial& material)
+    world_.each([&](Transform& transform, MeshRenderer& meshRenderer, PbrMaterial& material)
     {
         const DirectX::XMMATRIX world = worldMatrix(transform);
-        drawMesh(renderer.meshAsset, world, material);
+        drawMesh(meshRenderer.meshAsset, world, material);
     });
 
     drawSky();

@@ -1,4 +1,3 @@
-#define NOMINMAX
 #include <windows.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 
@@ -104,6 +103,7 @@ void Window::onFramebufferResize(GLFWwindow* window, int width, int height)
 
 void Window::onScroll(GLFWwindow* window, double offsetX, double offsetY)
 {
+    (void)offsetX;
     Window* self = static_cast<Window*>(glfwGetWindowUserPointer(window));
     if (self)
     {

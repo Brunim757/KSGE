@@ -1,4 +1,3 @@
-#define NOMINMAX
 #include <windows.h>
 
 #include "engine/assets/texture.hpp"

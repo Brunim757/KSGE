@@ -33,7 +33,7 @@ add_library(ksge_engine STATIC
 )
 target_include_directories(ksge_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ksge_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
-target_compile_options(ksge_engine PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
+target_compile_options(ksge_engine PRIVATE $<$<CONFIG:Release>:/O2> /W4 /WX /EHsc)
 target_link_libraries(ksge_engine PUBLIC
     glfw
     ${KSGE_FLECS_TARGET}
@@ -47,7 +47,7 @@ target_link_libraries(ksge_engine PUBLIC
 )
 
 add_executable(ksge_editor editor/main.cpp)
-target_compile_options(ksge_editor PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
+target_compile_options(ksge_editor PRIVATE $<$<CONFIG:Release>:/O2> /W4 /WX /EHsc)
 target_link_libraries(ksge_editor PRIVATE ksge_engine)
 
 enable_testing()
@@ -56,6 +56,6 @@ add_executable(ksge_tests
     tests/graphics_tests.cpp
     tests/run_tests.cpp
 )
-target_compile_options(ksge_tests PRIVATE $<$<CONFIG:Release>:/O2> /W4 /EHsc)
+target_compile_options(ksge_tests PRIVATE $<$<CONFIG:Release>:/O2> /W4 /WX /EHsc)
 target_link_libraries(ksge_tests PRIVATE ksge_engine)
 add_test(NAME ksge_tests COMMAND ksge_tests)
