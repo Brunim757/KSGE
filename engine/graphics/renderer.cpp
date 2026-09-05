@@ -465,7 +465,7 @@ void Renderer::bindMesh(std::uint32_t meshIndex)
     context_->IASetIndexBuffer(mesh.indices, DXGI_FORMAT_R32_UINT, 0u);
 }
 
-void Renderer::buildEntries(const CameraFrame& frame, const Frustum& frustum)
+void Renderer::buildEntries(const Frustum& frustum)
 {
     gbufferEntries_.clear();
     shadowEntries_.clear();
@@ -681,7 +681,7 @@ void Renderer::render()
 
     Frustum frustum;
     extractFrustum(frame, frustum);
-    buildEntries(frame, frustum);
+    buildEntries(frustum);
 
     for (std::uint32_t cascade = 0u; cascade < kShadowCascades; ++cascade)
     {

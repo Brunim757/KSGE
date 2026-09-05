@@ -64,7 +64,7 @@ private:
     void createPipeline();
     void createStates();
     void createDefaultTextures();
-    void buildEntries(const CameraFrame& frame, const Frustum& frustum);
+    void buildEntries(const Frustum& frustum);
     void drawGBufferBatches();
     void drawShadowBatches();
     void drawObjectBatchRange(
