@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace {
@@ -65,6 +66,35 @@ void testShaderSourcesCompile()
     {
         bytecode->Release();
         bytecode = nullptr;
+    }
+
+    CHECK(ksge::compileShaderSource(ksge::shaders::kPostVertex, "main", "vs_5_0", bytecode, error));
+    if (bytecode)
+    {
+        bytecode->Release();
+        bytecode = nullptr;
+    }
+    for (const char* body : {
+             ksge::shaders::kPostPassthrough,
+             ksge::shaders::kSsaoBody,
+             ksge::shaders::kSsaoBlurHBody,
+             ksge::shaders::kSsaoBlurVBody,
+             ksge::shaders::kFogBody,
+             ksge::shaders::kBloomExtractBody,
+             ksge::shaders::kBloomDownsampleBody,
+             ksge::shaders::kBloomBlurHBody,
+             ksge::shaders::kBloomBlurVBody,
+             ksge::shaders::kBloomUpsampleBody,
+             ksge::shaders::kCompositeBody,
+         })
+    {
+        const std::string source = ksge::shaders::postProcessPixelShader(body);
+        CHECK(ksge::compileShaderSource(source, "main", "ps_5_0", bytecode, error));
+        if (bytecode)
+        {
+            bytecode->Release();
+            bytecode = nullptr;
+        }
     }
 }
 
