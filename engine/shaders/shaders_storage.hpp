@@ -143,16 +143,10 @@ cbuffer ObjectCB : register(b1)
     row_major float4x4 gWorld;
 };
 
-VSOut
+float4 main(VSIn input) : SV_Position
 {
-    float4 position : SV_Position;
-};
-
-VSOut main(VSIn input)
-{
-    VSOut output;
-    output.position = mul(float4(input.position, 1.0), mul(gWorld, gLightViewProj));
-    return output;
+    float4x4 worldLight = mul(gWorld, gLightViewProj);
+    return mul(float4(input.position, 1.0), worldLight);
 }
 )";
 
