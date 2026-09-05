@@ -410,7 +410,7 @@ Implementar renderização fisicamente correta: materiais com albedo, roughness,
 
 ---
 
-## 10. Fase 6 — Pós-Processamento Avançado
+## 10. Fase 6 — Pós-Processamento Avançado ✅ CONCLUÍDA
 
 ### 10.1 Objetivo
 
@@ -418,27 +418,27 @@ Pipeline pós-fx em fullscreen pass: Volumetric Fog, Bloom físico, Color Gradin
 
 ### 10.2 Entregáveis
 
-- RT intermediários (HDR) com formatos suportados por DX11 (RGBA16F/R11G11B10).
-- Passes encadeados de downsample/upsample para Bloom.
-- Volumetric fog analytical (Ray/Height fog) + scattering.
-- SSAO com blurs esféricos/heurísticos.
-- LUT 3D de color grading aplicada no final.
+- [x] RT intermediários (HDR) com formatos suportados por DX11 (RGBA16F/R11G11B10).
+- [x] Passes encadeados de downsample/upsample para Bloom.
+- [x] Volumetric fog analytical (Ray/Height fog) + scattering.
+- [x] SSAO com blurs esféricos/heurísticos.
+- [x] LUT 3D de color grading aplicada no final.
 
 ### 10.3 Tarefas Detalhadas
 
-- [ ] Configurar swapchain e cena em HDR com tone mapping no final.
-- [ ] Bloom: threshold → downsample 4x → blur radial/bilateral → upsampling → adicionar.
-- [ ] Volumetric fog: integrar densidade ao longo do raio no frustum em resolução reduzida, com jitter temporal opcional.
-- [ ] SSAO: gerar noise rotativo, calcular oclusão, aplicar blur bilateral de normal e depth.
-- [ ] Color grading: carregar `.cube`/`LUT` 32³, amostrar trilinear, aplicar exposição e gamma.
-- [ ] Combined pass final: fundir SSAO/Diffuse/Specular/Fog/Bloom/Grade.
-- [ ] Debug views por teclado (1-6) para validar cada pass.
+- [x] Configurar swapchain e cena em HDR com tone mapping no final.
+- [x] Bloom: threshold → downsample 4x → blur radial/bilateral → upsampling → adicionar.
+- [x] Volumetric fog: integrar densidade ao longo do raio no frustum em resolução reduzida, com jitter temporal opcional.
+- [x] SSAO: gerar noise rotativo, calcular oclusão, aplicar blur bilateral de normal e depth.
+- [x] Color grading: carregar `.cube`/`LUT` 32³, amostrar trilinear, aplicar exposição e gamma.
+- [x] Combined pass final: fundir SSAO/Diffuse/Specular/Fog/Bloom/Grade.
+- [x] Debug views por teclado (0-6) para validar cada pass.
 
 ### 10.4 Critérios de Aceite
 
-- Cena com contraste suave, sem banding na GT 610.
-- Fog volumétrico com luz solar atravessando (god rays simples).
-- LUT trocando o look inteiro da cena instantaneamente.
+- [x] Cena com contraste suave, sem banding na GT 610 (validado headless via WARP no CI; correção visual final pendente do usuário no hardware alvo).
+- [x] Fog volumétrico com luz solar atravessando (god rays simples).
+- [x] LUT trocando o look inteiro da cena instantaneamente.
 
 ---
 
