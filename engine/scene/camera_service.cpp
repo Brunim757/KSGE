@@ -56,7 +56,7 @@ void CameraService::update(const InputSnapshot& input)
     if (lookEnabled)
     {
         camera.yaw += input.mouseDX * kLookSpeed;
-        camera.pitch += input.mouseDY * kLookSpeed;
+        camera.pitch -= input.mouseDY * kLookSpeed;
         camera.pitch = std::clamp(camera.pitch, -kPitchLimit, kPitchLimit);
     }
 
@@ -110,9 +110,9 @@ void CameraService::update(const InputSnapshot& input)
     }
 
     const DirectX::XMMATRIX basis = DirectX::XMMatrixSet(
-        right.x, right.y, right.z, 0.0f,
-        up.x, up.y, up.z, 0.0f,
-        forward.x, forward.y, forward.z, 0.0f,
+        right.x, up.x, forward.x, 0.0f,
+        right.y, up.y, forward.y, 0.0f,
+        right.z, up.z, forward.z, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f);
     DirectX::XMStoreFloat4(
         &transform.rotation, DirectX::XMQuaternionRotationMatrix(basis));
