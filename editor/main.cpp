@@ -195,7 +195,7 @@ int main(int argc, char** argv)
                 luminance,
                 renderer.frameCpuMs(),
                 renderer.frameGpuMs(),
-                static_cast<unsigned>(world.handle().count(flecs::All)),
+                static_cast<unsigned>(3u + static_cast<std::uint32_t>(stressCount)),
                 renderer.frameDraws(),
                 renderer.gbufferDraws(),
                 renderer.shadowDraws(),
