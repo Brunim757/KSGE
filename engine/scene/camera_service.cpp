@@ -84,8 +84,9 @@ void CameraService::update(const InputSnapshot& input)
     }
     if (isPressed(input, KeyS))
     {
-        transform.position.x -= horizontal.x * step;
-        transform.position.z -= horizontal.z * step;
+        transform.position.x -= forward.x * step;
+        transform.position.y -= forward.y * step;
+        transform.position.z -= forward.z * step;
     }
     if (isPressed(input, KeyD))
     {
