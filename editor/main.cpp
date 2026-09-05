@@ -147,10 +147,16 @@ int main(int argc, char** argv)
         renderer.render();
         if (selfTest && (frameCount % 30) == 0)
         {
+            const std::uint32_t mode = static_cast<std::uint32_t>(frameCount / 30) % 7u;
+            renderer.setDebugMode(mode);
             float luminance = 0.0f;
             if (device.readAverageLuminance(luminance))
             {
-                std::printf("KSGE selftest frame %d luminance %.4f\n", frameCount, luminance);
+                std::printf(
+                    "KSGE selftest frame %d mode %u luminance %.4f\n",
+                    frameCount,
+                    static_cast<unsigned>(mode),
+                    luminance);
             }
         }
         device.present();
