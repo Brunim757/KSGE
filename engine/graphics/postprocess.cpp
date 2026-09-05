@@ -14,8 +14,8 @@ namespace {
 void writeDiagnostic(const char* what, const char* detail)
 {
     std::fprintf(stderr, "KSGE postprocess: %s %s\n", what, detail);
-    FILE* file = std::fopen("gpu.log", "a");
-    if (file != nullptr)
+    FILE* file = nullptr;
+    if (fopen_s(&file, "gpu.log", "a") == 0 && file != nullptr)
     {
         std::fprintf(file, "postprocess: %s %s\n", what, detail);
         std::fclose(file);
