@@ -78,7 +78,7 @@ private:
     std::map<std::int64_t, ChunkSlot> chunks_;
     std::vector<std::int64_t> queuedKeys_;
     std::vector<ChunkResult> results_;
-    std::mutex queueMutex_;
+    mutable std::mutex queueMutex_;
     std::mutex resultMutex_;
     std::condition_variable queueSignal_;
     std::thread worker_;
