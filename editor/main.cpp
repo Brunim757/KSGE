@@ -50,33 +50,18 @@ void spawnDemoScene(
     ksge::PbrMaterial concrete;
     concrete.metallicFactor = 0.0f;
     concrete.roughnessFactor = 0.9f;
-    spawn(floorMesh, {0.0f, -1.0f, 0.0f}, {30.0f, 1.0f, 30.0f}, concrete);
+    spawn(floorMesh, {0.0f, -1.0f, 0.0f}, {20.0f, 1.0f, 20.0f}, concrete);
 
     ksge::PbrMaterial metal;
     metal.metallicFactor = 1.0f;
     metal.roughnessFactor = 0.15f;
-    spawn(sphereMesh, {0.0f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, metal);
+    spawn(sphereMesh, {-2.5f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, metal);
 
     ksge::PbrMaterial rough;
     rough.metallicFactor = 0.0f;
-    rough.roughnessFactor = 1.0f;
-    spawn(sphereMesh, {-2.2f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, rough);
-
-    ksge::PbrMaterial glow;
-    glow.metallicFactor = 0.0f;
-    glow.roughnessFactor = 0.5f;
-    glow.emissiveFactor = {1.0f, 0.3f, 0.1f};
-    spawn(cubeMesh, {2.2f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, glow);
-
-    ksge::PbrMaterial stone;
-    stone.metallicFactor = 0.1f;
-    stone.roughnessFactor = 0.65f;
-    spawn(cubeMesh, {-1.4f, 0.4f, -2.0f}, {0.8f, 0.8f, 0.8f}, stone);
-
-    ksge::PbrMaterial polished;
-    polished.metallicFactor = 0.9f;
-    polished.roughnessFactor = 0.35f;
-    spawn(sphereMesh, {1.4f, 0.4f, -2.0f}, {0.9f, 0.9f, 0.9f}, polished);
+    rough.roughnessFactor = 0.7f;
+    rough.emissiveFactor = {0.4f, 0.15f, 0.05f};
+    spawn(cubeMesh, {2.5f, 0.6f, 0.0f}, {1.0f, 1.0f, 1.0f}, rough);
 }
 
 }

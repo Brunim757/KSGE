@@ -35,7 +35,7 @@ CameraService::CameraService(flecs::world& world)
     : world_(world)
 {
     camera_ = world_.entity("editor_camera")
-                  .set<Transform>({})
+                  .set<Transform>({{0.0f, 2.0f, -10.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f}})
                   .set<Camera>({0.0f, 0.0f, 60.0f, 0.1f, 5000.0f, 16.0f / 9.0f});
 }
 
