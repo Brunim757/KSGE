@@ -113,7 +113,6 @@ void PostProcess::attach(ID3D11Device* device, ID3D11DeviceContext* context)
 {
     d3d_ = device;
     context_ = context;
-    createdDevice_ = device;
 }
 
 PostProcess::~PostProcess()
@@ -262,7 +261,7 @@ void PostProcess::applyBloom()
     const std::uint32_t sixteenthHeight = sixteenth(height_);
 
     beginPass(bloomBase_.rtv, static_cast<float>(quarterWidth), static_cast<float>(quarterHeight), false, bloomExtractShader_);
-    uploadConstants(quarterWidth, quarterHeight);
+    uploadConstants(width_, height_);
     ID3D11ShaderResourceView* extractResource[1] = {sceneColor_.srv};
     context_->PSSetShaderResources(0u, 1u, extractResource);
     drawFullscreen();
@@ -391,10 +390,10 @@ void PostProcess::uploadConstants(std::uint32_t texelWidth, std::uint32_t texelH
         1.0f,
     };
     constants.viewport = {
-        static_cast<float>(texelWidth),
-        static_cast<float>(texelHeight),
-        1.0f / static_cast<float>(texelWidth),
-        1.0f / static_cast<float>(texelHeight),
+        static_cast<float>(width_),
+        static_cast<float>(height_),
+        1.0f / static_cast<float>(width_),
+        1.0f / static_cast<float>(height_),
     };
     constants.targetSize = {
         static_cast<float>(texelWidth),
