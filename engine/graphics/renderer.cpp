@@ -497,6 +497,7 @@ void Renderer::buildEntries(const Frustum& frustum)
 
     world_.each([&](Transform& transform, MeshRenderer& meshRenderer, PbrMaterial& material)
     {
+        ++frameGathered_;
         if (meshRenderer.meshAsset >= meshes_.size())
         {
             return;
@@ -717,6 +718,7 @@ void Renderer::render()
     gbufferInstances_ = 0u;
     shadowDraws_ = 0u;
     shadowInstances_ = 0u;
+    frameGathered_ = 0u;
 
     if (disjointQuery_)
     {
@@ -895,6 +897,11 @@ float Renderer::frameCpuMs() const
 float Renderer::frameGpuMs() const
 {
     return frameGpuMs_;
+}
+
+std::uint32_t Renderer::frameGathered() const
+{
+    return frameGathered_;
 }
 
 }

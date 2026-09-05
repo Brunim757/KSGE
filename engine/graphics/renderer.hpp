@@ -70,6 +70,7 @@ public:
     std::uint32_t gbufferInstances() const;
     std::uint32_t shadowDraws() const;
     std::uint32_t shadowInstances() const;
+    std::uint32_t frameGathered() const;
     float frameCpuMs() const;
     float frameGpuMs() const;
 
@@ -139,6 +140,7 @@ private:
     std::uint32_t gbufferInstances_ = 0u;
     std::uint32_t shadowDraws_ = 0u;
     std::uint32_t shadowInstances_ = 0u;
+    std::uint32_t frameGathered_ = 0u;
     float frameCpuMs_ = 0.0f;
     float frameGpuMs_ = 0.0f;
 
