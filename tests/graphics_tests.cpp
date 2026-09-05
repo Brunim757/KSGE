@@ -81,6 +81,7 @@ void testPostProcessShadersCompile()
     }
 
     const char* bodies[] = {
+        ksge::shaders::kPostCopyBody,
         ksge::shaders::kSsaoBody,
         ksge::shaders::kSsaoBlurHBody,
         ksge::shaders::kSsaoBlurVBody,

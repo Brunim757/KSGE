@@ -290,6 +290,11 @@ float3 reconstructWorld(float2 uv, float depth)
     float4 world = mul(ndc, gInvViewProj);
     return world.xyz / world.w;
 }
+
+bool finiteValue(float x)
+{
+    return x * 0.0 == 0.0 && x == x;
+}
 )";
 
 inline constexpr const char* kSsaoBody = R"(
@@ -319,19 +324,24 @@ static const float3 gKernel[16] = {
 float4 main(VSOut input) : SV_Target
 {
     float depth = gDepth.Sample(gPointSampler, input.uv).r;
-    if (depth >= 1.0)
+    if (depth >= 1.0 || depth <= 0.0)
     {
         return float4(1.0, 1.0, 1.0, 1.0);
     }
 
     float3 center = reconstructWorld(input.uv, depth);
+    if (!finiteValue(center.x) || !finiteValue(center.y) || !finiteValue(center.z))
+    {
+        return float4(1.0, 1.0, 1.0, 1.0);
+    }
 
     float2 rightUv = input.uv + float2(gViewport.z, 0.0);
     float2 upUv = input.uv + float2(0.0, gViewport.w);
     float3 right = reconstructWorld(rightUv, gDepth.Sample(gPointSampler, rightUv).r);
     float3 up = reconstructWorld(upUv, gDepth.Sample(gPointSampler, upUv).r);
 
-    float3 normal = normalize(cross(right - center, up - center));
+    float3 side = cross(right - center, up - center);
+    float3 normal = dot(side, side) > 1e-8 ? normalize(side) : float3(0.0, 1.0, 0.0);
 
     float3 random = gNoise.Sample(gPointSampler, input.uv * gTargetSize.xy / 4.0).xyz * 2.0 - 1.0;
     float3 tangent = normalize(random - normal * dot(random, normal));
@@ -446,6 +456,10 @@ float4 main(VSOut input) : SV_Target
     float depth = gDepth.Sample(gPointSampler, input.uv).r;
 
     float3 end = reconstructWorld(input.uv, depth);
+    if (!finiteValue(end.x) || !finiteValue(end.y) || !finiteValue(end.z))
+    {
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
     float3 viewDir = normalize(end - gCameraPos.xyz);
     float distance = length(end - gCameraPos.xyz);
     if (distance <= 0.0001)
@@ -630,6 +644,16 @@ float4 main(VSOut input) : SV_Target
     color = gLut.Sample(gLinearSampler, saturate(color)).xyz;
     color = pow(color, 1.0 / 2.2);
     return float4(color, 1.0);
+}
+)";
+
+inline constexpr const char* kPostCopyBody = R"(
+Texture2D gScene : register(t0);
+SamplerState gLinearSampler : register(s1);
+
+float4 main(VSOut input) : SV_Target
+{
+    return float4(gScene.Sample(gLinearSampler, input.uv).rgb, 1.0);
 }
 )";
 

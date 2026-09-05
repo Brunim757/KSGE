@@ -87,6 +87,8 @@ private:
     void applyFog();
     void applyBloom();
     void applyComposite(ID3D11RenderTargetView* backbuffer);
+    void drawSceneFallback(ID3D11RenderTargetView* backbuffer);
+    void clearTarget(ID3D11RenderTargetView* rtv, float r, float g, float b, float a);
 
     ID3D11Device* d3d_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
@@ -106,6 +108,7 @@ private:
     Target bloomTemp_;
 
     ID3D11VertexShader* fullscreenVertex_ = nullptr;
+    ID3D11PixelShader* copyShader_ = nullptr;
     ID3D11PixelShader* ssaoShader_ = nullptr;
     ID3D11PixelShader* ssaoBlurHShader_ = nullptr;
     ID3D11PixelShader* ssaoBlurVShader_ = nullptr;

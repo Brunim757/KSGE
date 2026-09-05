@@ -5,10 +5,22 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace ksge {
 
 namespace {
+
+void writeDiagnostic(const char* what, const char* detail)
+{
+    std::fprintf(stderr, "KSGE postprocess: %s %s\n", what, detail);
+    FILE* file = std::fopen("gpu.log", "a");
+    if (file != nullptr)
+    {
+        std::fprintf(file, "postprocess: %s %s\n", what, detail);
+        std::fclose(file);
+    }
+}
 
 struct PostConstants
 {
@@ -163,8 +175,9 @@ void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuf
         return;
     }
     ensureTargets(info.width, info.height);
-    if (compositeShader_ == nullptr)
+    if (compositeShader_ == nullptr || copyShader_ == nullptr)
     {
+        drawSceneFallback(backbuffer);
         return;
     }
 
@@ -178,6 +191,24 @@ void PostProcess::run(const PostFrameInfo& info, ID3D11RenderTargetView* backbuf
     postSunColor_ = info.sunColor;
     postExposure_ = info.exposure;
     postDebugMode_ = info.debugMode;
+
+    if (ssaoShader_ == nullptr)
+    {
+        clearTarget(ssaoRaw_.rtv, 1.0f, 1.0f, 1.0f, 1.0f);
+        clearTarget(ssaoBlur_.rtv, 1.0f, 1.0f, 1.0f, 1.0f);
+    }
+    if (fogShader_ == nullptr)
+    {
+        clearTarget(fog_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+    if (bloomExtractShader_ == nullptr)
+    {
+        clearTarget(bloomBase_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+        clearTarget(bloomMip1_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+        clearTarget(bloomMip2_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+        clearTarget(bloomAccum_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+        clearTarget(bloomTemp_.rtv, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
 
     updateGradedLut();
     applySsao();
@@ -311,10 +342,15 @@ beginPass(bloomMip2_.rtv, static_cast<float>(sixteenthWidth), static_cast<float>
 
 void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
 {
-    if (compositeShader_ == nullptr || backbuffer == nullptr ||
-        sceneColor_.srv == nullptr || ssaoRaw_.srv == nullptr || fog_.srv == nullptr ||
-        bloomBase_.srv == nullptr || lutView_ == nullptr || depth_.srv == nullptr)
+    if (backbuffer == nullptr)
     {
+        return;
+    }
+    if (compositeShader_ == nullptr || sceneColor_.srv == nullptr ||
+        ssaoRaw_.srv == nullptr || fog_.srv == nullptr || bloomBase_.srv == nullptr ||
+        lutView_ == nullptr || depth_.srv == nullptr || copyShader_ == nullptr)
+    {
+        drawSceneFallback(backbuffer);
         return;
     }
 
@@ -333,6 +369,29 @@ void PostProcess::applyComposite(ID3D11RenderTargetView* backbuffer)
     context_->PSSetShaderResources(0u, 7u, resources);
     drawFullscreen();
     clearResources();
+}
+
+void PostProcess::drawSceneFallback(ID3D11RenderTargetView* backbuffer)
+{
+    if (backbuffer == nullptr || copyShader_ == nullptr || sceneColor_.srv == nullptr)
+    {
+        return;
+    }
+    beginPass(backbuffer, static_cast<float>(width_), static_cast<float>(height_), false, copyShader_);
+    ID3D11ShaderResourceView* resources[1] = {sceneColor_.srv};
+    context_->PSSetShaderResources(0u, 1u, resources);
+    drawFullscreen();
+    clearResources();
+}
+
+void PostProcess::clearTarget(ID3D11RenderTargetView* rtv, float r, float g, float b, float a)
+{
+    if (rtv == nullptr)
+    {
+        return;
+    }
+    const float color[4] = {r, g, b, a};
+    context_->ClearRenderTargetView(rtv, color);
 }
 
 void PostProcess::beginPass(
@@ -533,14 +592,20 @@ void PostProcess::createTargets(std::uint32_t width, std::uint32_t height)
     pointDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
     pointDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
     pointDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-    d3d_->CreateSamplerState(&pointDesc, &pointSampler_);
+    if (FAILED(d3d_->CreateSamplerState(&pointDesc, &pointSampler_)))
+    {
+        writeDiagnostic("point sampler creation failed", "post sampler");
+    }
 
     D3D11_SAMPLER_DESC linearDesc = {};
     linearDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
     linearDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
     linearDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
     linearDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-    d3d_->CreateSamplerState(&linearDesc, &linearSampler_);
+    if (FAILED(d3d_->CreateSamplerState(&linearDesc, &linearSampler_)))
+    {
+        writeDiagnostic("linear sampler creation failed", "post sampler");
+    }
 
     createTarget(width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, sceneColor_);
     createDepthTarget(width, height);
@@ -560,7 +625,10 @@ void PostProcess::createTargets(std::uint32_t width, std::uint32_t height)
     constantDesc.ByteWidth = static_cast<UINT>(sizeof(PostConstants));
     constantDesc.Usage = D3D11_USAGE_DEFAULT;
     constantDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    d3d_->CreateBuffer(&constantDesc, nullptr, &constants_);
+    if (FAILED(d3d_->CreateBuffer(&constantDesc, nullptr, &constants_)))
+    {
+        writeDiagnostic("post constant buffer creation failed", "post cb");
+    }
 
     compileShaders();
 }
@@ -581,8 +649,16 @@ void PostProcess::createTarget(
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
-    d3d_->CreateTexture2D(&desc, nullptr, &out.texture);
-    d3d_->CreateRenderTargetView(out.texture, nullptr, &out.rtv);
+    if (FAILED(d3d_->CreateTexture2D(&desc, nullptr, &out.texture)))
+    {
+        writeDiagnostic("render target texture creation failed", "post target");
+        return;
+    }
+    if (FAILED(d3d_->CreateRenderTargetView(out.texture, nullptr, &out.rtv)))
+    {
+        writeDiagnostic("render target view creation failed", "post target");
+        return;
+    }
     d3d_->CreateShaderResourceView(out.texture, nullptr, &out.srv);
 }
 
@@ -598,12 +674,20 @@ void PostProcess::createDepthTarget(std::uint32_t width, std::uint32_t height)
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
 
-    d3d_->CreateTexture2D(&desc, nullptr, &depth_.texture);
+    if (FAILED(d3d_->CreateTexture2D(&desc, nullptr, &depth_.texture)))
+    {
+        writeDiagnostic("depth texture creation failed", "post depth");
+        return;
+    }
 
     D3D11_DEPTH_STENCIL_VIEW_DESC depthViewDesc = {};
     depthViewDesc.Format = DXGI_FORMAT_D32_FLOAT;
     depthViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
-    d3d_->CreateDepthStencilView(depth_.texture, &depthViewDesc, &depth_.dsv);
+    if (FAILED(d3d_->CreateDepthStencilView(depth_.texture, &depthViewDesc, &depth_.dsv)))
+    {
+        writeDiagnostic("depth stencil view creation failed", "post depth");
+        return;
+    }
 
     D3D11_SHADER_RESOURCE_VIEW_DESC resourceDesc = {};
     resourceDesc.Format = DXGI_FORMAT_R32_FLOAT;
@@ -637,8 +721,15 @@ void PostProcess::createNoiseTexture()
     initialData.pSysMem = pixels;
     initialData.SysMemPitch = size * 4u;
 
-    d3d_->CreateTexture2D(&desc, &initialData, &noiseTexture_);
-    d3d_->CreateShaderResourceView(noiseTexture_, nullptr, &noiseView_);
+    if (FAILED(d3d_->CreateTexture2D(&desc, &initialData, &noiseTexture_)))
+    {
+        writeDiagnostic("noise texture creation failed", "ssao noise");
+        return;
+    }
+    if (FAILED(d3d_->CreateShaderResourceView(noiseTexture_, nullptr, &noiseView_)))
+    {
+        writeDiagnostic("noise view creation failed", "ssao noise");
+    }
 }
 
 void PostProcess::releaseLut()
@@ -670,9 +761,9 @@ void PostProcess::createLut(std::uint32_t size)
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 
-    d3d_->CreateTexture3D(&desc, nullptr, &lutTexture_);
-    if (lutTexture_ == nullptr)
+    if (FAILED(d3d_->CreateTexture3D(&desc, nullptr, &lutTexture_)))
     {
+        writeDiagnostic("lut texture creation failed", "3d lut");
         return;
     }
 
@@ -680,7 +771,11 @@ void PostProcess::createLut(std::uint32_t size)
     resourceDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
     resourceDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE3D;
     resourceDesc.Texture3D.MipLevels = 1u;
-    d3d_->CreateShaderResourceView(lutTexture_, &resourceDesc, &lutView_);
+    if (FAILED(d3d_->CreateShaderResourceView(lutTexture_, &resourceDesc, &lutView_)))
+    {
+        writeDiagnostic("lut view creation failed", "3d lut");
+        return;
+    }
 
     lutSize_ = size;
     lutBuffer_.resize(static_cast<std::size_t>(size) * size * size * 4u);
@@ -692,22 +787,36 @@ void PostProcess::compileShaders()
     std::string error;
     ID3DBlob* bytecode = nullptr;
 
-    createVertexShader(d3d_, shaders::kPostVertex, fullscreenVertex_, bytecode, error);
+    if (!createVertexShader(d3d_, shaders::kPostVertex, fullscreenVertex_, bytecode, error))
+    {
+        writeDiagnostic("fullscreen vertex shader failed", error.c_str());
+    }
     if (bytecode)
     {
         bytecode->Release();
         bytecode = nullptr;
     }
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kSsaoBody), ssaoShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kSsaoBlurHBody), ssaoBlurHShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kSsaoBlurVBody), ssaoBlurVShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kFogBody), fogShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kBloomExtractBody), bloomExtractShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kBloomDownsampleBody), bloomDownsampleShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kBloomBlurHBody), bloomBlurHShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kBloomBlurVBody), bloomBlurVShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kBloomUpsampleBody), bloomUpsampleShader_, error);
-    createPixelShader(d3d_, shaders::postProcessPixelShader(shaders::kCompositeBody), compositeShader_, error);
+
+    auto compile = [&](const char* name, ID3D11PixelShader*& target, const std::string& source)
+    {
+        std::string shaderError;
+        if (!createPixelShader(d3d_, source, target, shaderError))
+        {
+            writeDiagnostic(name, shaderError.c_str());
+        }
+    };
+
+    compile("copy shader", copyShader_, shaders::postProcessPixelShader(shaders::kPostCopyBody));
+    compile("ssao", ssaoShader_, shaders::postProcessPixelShader(shaders::kSsaoBody));
+    compile("ssao blur h", ssaoBlurHShader_, shaders::postProcessPixelShader(shaders::kSsaoBlurHBody));
+    compile("ssao blur v", ssaoBlurVShader_, shaders::postProcessPixelShader(shaders::kSsaoBlurVBody));
+    compile("fog", fogShader_, shaders::postProcessPixelShader(shaders::kFogBody));
+    compile("bloom extract", bloomExtractShader_, shaders::postProcessPixelShader(shaders::kBloomExtractBody));
+    compile("bloom downsample", bloomDownsampleShader_, shaders::postProcessPixelShader(shaders::kBloomDownsampleBody));
+    compile("bloom blur h", bloomBlurHShader_, shaders::postProcessPixelShader(shaders::kBloomBlurHBody));
+    compile("bloom blur v", bloomBlurVShader_, shaders::postProcessPixelShader(shaders::kBloomBlurVBody));
+    compile("bloom upsample", bloomUpsampleShader_, shaders::postProcessPixelShader(shaders::kBloomUpsampleBody));
+    compile("composite", compositeShader_, shaders::postProcessPixelShader(shaders::kCompositeBody));
 }
 
 void PostProcess::releaseShaders()
@@ -761,6 +870,11 @@ void PostProcess::releaseShaders()
     {
         ssaoShader_->Release();
         ssaoShader_ = nullptr;
+    }
+    if (copyShader_)
+    {
+        copyShader_->Release();
+        copyShader_ = nullptr;
     }
     if (fullscreenVertex_)
     {
